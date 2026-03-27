@@ -90,7 +90,7 @@ def parse_alignment_chars(align_path: str) -> tuple:
 
     # Pad to MAX_CHAR_LEN
     if len(indices) < MAX_CHAR_LEN:
-        indices += [BLANK_IDX] * (MAX_CHAR_LEN - len(indices))
+        indices += [0] * (MAX_CHAR_LEN - len(indices))  # pad with 0 (ignored via label_length)
     else:
         indices = indices[:MAX_CHAR_LEN]
         length = MAX_CHAR_LEN
