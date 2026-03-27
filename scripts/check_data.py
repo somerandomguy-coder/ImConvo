@@ -38,13 +38,19 @@ align_path = ""
 
 one_person = []
 print(len(listdir))
+path_list = []
 for i in range(len(listdir)):
+    if i == 5:
+        break
     file_path = os.path.join(path, listdir[i])
     if file_path == "./data/s1_processed/align":
         align_path = file_path
     else:
         frames = read_video(file_path)
         one_person.append(frames)
+        path_list.append(file_path)
+
+print(path_list)
 one_person = np.array(one_person)
 print(one_person.shape)
 
