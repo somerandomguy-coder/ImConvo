@@ -1,0 +1,83 @@
+{
+  "loss": [
+    15.478516578674316
+  ],
+  "slot_0_loss": [
+    2.19384503364563
+  ],
+  "slot_0_masked_accuracy": [
+    0.2524999976158142
+  ],
+  "slot_1_loss": [
+    2.011627197265625
+  ],
+  "slot_1_masked_accuracy": [
+    0.24375000596046448
+  ],
+  "slot_2_loss": [
+    2.0888028144836426
+  ],
+  "slot_2_masked_accuracy": [
+    0.21875
+  ],
+  "slot_3_loss": [
+    3.8602001667022705
+  ],
+  "slot_3_masked_accuracy": [
+    0.042500000447034836
+  ],
+  "slot_4_loss": [
+    3.1550650596618652
+  ],
+  "slot_4_masked_accuracy": [
+    0.09125000238418579
+  ],
+  "slot_5_loss": [
+    2.015720844268799
+  ],
+  "slot_5_masked_accuracy": [
+    0.23624999821186066
+  ],
+  "val_loss": [
+    11.641840934753418
+  ],
+  "val_slot_0_loss": [
+    1.4178420305252075
+  ],
+  "val_slot_0_masked_accuracy": [
+    0.24500000476837158
+  ],
+  "val_slot_1_loss": [
+    1.4616833925247192
+  ],
+  "val_slot_1_masked_accuracy": [
+    0.1899999976158142
+  ],
+  "val_slot_2_loss": [
+    1.3857433795928955
+  ],
+  "val_slot_2_masked_accuracy": [
+    0.27000001072883606
+  ],
+  "val_slot_3_loss": [
+    3.18912410736084
+  ],
+  "val_slot_3_masked_accuracy": [
+    0.04500000178813934
+  ],
+  "val_slot_4_loss": [
+    2.338541269302368
+  ],
+  "val_slot_4_masked_accuracy": [
+    0.10499999672174454
+  ],
+  "val_slot_5_loss": [
+    1.4011433124542236
+  ],
+  "val_slot_5_masked_accuracy": [
+    0.2150000035762787
+  ],
+  "learning_rate": [
+    0.0010000000474974513
+  ]
+}
