@@ -7,6 +7,7 @@ Prerequisites:
 """
 
 import json
+import math
 import os
 
 import numpy as np
@@ -176,6 +177,15 @@ def main():
         seed=CONFIG["seed"],
     )
 
+    # Compute steps from known dataset sizes
+    num_train = len(val_paths)  # val_paths length == num_val
+    # Recompute from split ratio
+    total_samples = int(len(val_paths) / CONFIG["val_split"])  # approximate
+    num_train_samples = total_samples - len(val_paths)
+    num_val_samples = len(val_paths)
+    steps_per_epoch = math.ceil(num_train_samples / CONFIG["batch_size"])
+    validation_steps = math.ceil(num_val_samples / CONFIG["batch_size"])
+
     # ---- Build model ----
     model = LipReadingCTC(num_chars=NUM_CHARS)
 
@@ -223,6 +233,8 @@ def main():
         train_ds,
         validation_data=val_ds,
         epochs=CONFIG["num_epochs"],
+        steps_per_epoch=steps_per_epoch,
+        validation_steps=validation_steps,
         callbacks=callbacks,
         verbose=1,
     )
@@ -236,7 +248,7 @@ def main():
     total_cer = 0.0
     num_samples = 0
 
-    for batch in val_ds:
+    for batch in val_ds.take(validation_steps):
         x, y = batch
         logits = model(x, training=False)
         decoded_batch = model.decode_greedy(logits)

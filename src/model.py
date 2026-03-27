@@ -2,11 +2,11 @@
 CTC-based lip reading model (TensorFlow/Keras).
 
 Architecture: 3D-CNN front-end → Bidirectional GRU → per-frame character prediction
-Uses CTC loss (via keras.backend.ctc_batch_cost) for alignment-free sequence prediction.
+Uses CTC loss (via tf.nn.ctc_loss) for alignment-free sequence prediction.
 """
 
 import tensorflow as tf
-from keras import layers, Model, backend as K
+from keras import layers, Model
 
 from src.utils import MAX_FRAMES, BLANK_IDX, NUM_CHARS
 
@@ -22,6 +22,7 @@ class LipReadingCTC(Model):
     def __init__(self, num_chars: int = NUM_CHARS, **kwargs):
         super().__init__(name="LipReadingCTC", **kwargs)
         self.num_chars = num_chars
+        self.loss_tracker = tf.keras.metrics.Mean(name="loss")
 
         # -----------------------------------------------------------
         # 3D CNN front-end
@@ -58,8 +59,8 @@ class LipReadingCTC(Model):
         # -----------------------------------------------------------
         self.char_dense = layers.Dense(128, activation="relu")
         self.char_dropout = layers.Dropout(0.3)
-        # Softmax output — ctc_batch_cost expects probabilities
-        self.char_output = layers.Dense(num_chars, activation="softmax", name="char_probs")
+        # Linear output — tf.nn.ctc_loss expects raw logits
+        self.char_output = layers.Dense(num_chars, activation=None, name="char_logits")
 
     def call(self, inputs, training=False):
         # 3D CNN
@@ -73,29 +74,39 @@ class LipReadingCTC(Model):
         x = self.bigru1(x, training=training)
         x = self.bigru2(x, training=training)
 
-        # Per-frame character probabilities
+        # Per-frame character logits
         x = self.char_dense(x)
         x = self.char_dropout(x, training=training)
-        probs = self.char_output(x)  # (B, T, num_chars)
+        logits = self.char_output(x)  # (B, T, num_chars)
 
-        return probs
+        return logits
 
     def _compute_ctc_loss(self, y_pred, labels, label_length):
-        """Compute CTC loss using keras backend."""
+        """Compute CTC loss using tf.nn.ctc_loss.
+        
+        y_pred are raw logits (B, T, C). tf.nn.ctc_loss internally
+        applies log_softmax, so we must NOT apply softmax beforehand.
+        """
         batch_size = tf.shape(y_pred)[0]
-        # ctc_batch_cost expects input_length as (batch, 1) and label_length as (batch, 1)
-        input_length = tf.fill([batch_size, 1], MAX_FRAMES)
-        label_length = tf.cast(tf.reshape(label_length, [-1, 1]), tf.int32)
+        input_length = tf.fill([batch_size], tf.cast(MAX_FRAMES, tf.int32))
+        label_length = tf.cast(tf.reshape(label_length, [-1]), tf.int32)
 
-        # ctc_batch_cost expects y_pred as (batch, time, classes) — softmax probs
-        # and y_true as (batch, max_label_length) — integer labels
-        loss = K.ctc_batch_cost(
-            y_true=tf.cast(labels, tf.float32),
-            y_pred=y_pred,
-            input_length=tf.cast(input_length, tf.int32),
+        # tf.nn.ctc_loss expects time-major logits: (T, B, C)
+        logits_time_major = tf.transpose(y_pred, [1, 0, 2])
+
+        loss = tf.nn.ctc_loss(
+            labels=tf.cast(labels, tf.int32),
+            logits=logits_time_major,
             label_length=label_length,
+            logit_length=input_length,
+            logits_time_major=True,
+            blank_index=BLANK_IDX,
         )
         return tf.reduce_mean(loss)
+
+    @property
+    def metrics(self):
+        return [self.loss_tracker]
 
     def train_step(self, data):
         """Custom training step with CTC loss."""
@@ -112,7 +123,8 @@ class LipReadingCTC(Model):
         grads, _ = tf.clip_by_global_norm(grads, 5.0)
         self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
 
-        return {"loss": loss}
+        self.loss_tracker.update_state(loss)
+        return {"loss": self.loss_tracker.result()}
 
     def test_step(self, data):
         """Custom test step with CTC loss."""
@@ -123,24 +135,23 @@ class LipReadingCTC(Model):
         y_pred = self(x, training=False)
         loss = self._compute_ctc_loss(y_pred, labels, label_length)
 
-        return {"loss": loss}
+        self.loss_tracker.update_state(loss)
+        return {"loss": self.loss_tracker.result()}
 
     def decode_greedy(self, y_pred):
         """
         Greedy CTC decoding.
 
         Args:
-            y_pred: (batch, T, num_chars) — softmax probabilities
+            y_pred: (batch, T, num_chars) — raw logits
 
         Returns:
             List of decoded index sequences (one per batch item)
         """
-        # Convert to log-probs, transpose to time-major
-        log_probs = tf.math.log(tf.clip_by_value(y_pred, 1e-7, 1.0))
-        logits_t = tf.transpose(log_probs, [1, 0, 2])  # (T, B, C)
+        # y_pred are raw logits; transpose to time-major for the decoder
+        logits_t = tf.transpose(y_pred, [1, 0, 2])  # (T, B, C)
         input_length = tf.fill([tf.shape(y_pred)[0]], MAX_FRAMES)
 
-        # Blank is the LAST class for keras CTC
         decoded, _ = tf.nn.ctc_greedy_decoder(
             logits_t, input_length, blank_index=BLANK_IDX
         )

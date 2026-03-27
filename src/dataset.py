@@ -98,6 +98,7 @@ def create_ctc_dataset(
 
     dataset = tf.data.Dataset.from_generator(generator, output_signature=output_sig)
     dataset = dataset.batch(batch_size)
+    dataset = dataset.repeat()
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
     return dataset
 
