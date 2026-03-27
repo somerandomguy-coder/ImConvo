@@ -1,7 +1,10 @@
 """
 Preprocessing script for the GRID lip reading corpus.
 
+Expected layout:  data/s{N}_processed/*.mpg + data/s{N}_processed/align/*.align
+
 Converts raw .mpg video files → preprocessed .npy arrays (run once).
+Output is a flat directory of .npy files + a manifest.txt.
 
 Usage:
     python scripts/preprocess.py
@@ -10,6 +13,7 @@ Usage:
 
 import argparse
 import os
+import re
 import sys
 import time
 
@@ -21,41 +25,99 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.utils import extract_lip_frames
 
 
-def preprocess_dataset(data_dir: str, output_dir: str):
-    """Preprocess all videos in data_dir and save as .npy files."""
-    align_dir = os.path.join(data_dir, "align")
-    os.makedirs(output_dir, exist_ok=True)
+def discover_video_samples(data_dir: str):
+    """
+    Discover all (video_path, align_path) pairs from per-speaker directories.
 
-    video_files = sorted(f for f in os.listdir(data_dir) if f.endswith(".mpg"))
-    print(f"Found {len(video_files)} video files in {data_dir}")
+    Expected layout: data/s{N}_processed/*.mpg + data/s{N}_processed/align/*.align
+    """
+    samples = []  # list of (video_path, align_path, unique_name)
 
-    valid_names = []
-    start_time = time.time()
+    speaker_dirs = sorted(
+        d
+        for d in os.listdir(data_dir)
+        if os.path.isdir(os.path.join(data_dir, d))
+        and re.match(r"s\d+(_processed)?$", d)
+    )
 
-    for i, vf in enumerate(video_files):
-        name = os.path.splitext(vf)[0]
-        align_path = os.path.join(align_dir, f"{name}.align")
+    if not speaker_dirs:
+        print(f"[ERROR] No speaker directories (s*_processed) found in {data_dir}")
+        return samples
 
-        if not os.path.exists(align_path):
-            print(f"  [SKIP] {name} — no alignment file")
+    for speaker in speaker_dirs:
+        speaker_path = os.path.join(data_dir, speaker)
+        align_dir = os.path.join(speaker_path, "align")
+
+        if not os.path.isdir(align_dir):
+            print(f"  [SKIP] {speaker} — no align/ subdirectory")
             continue
 
-        output_path = os.path.join(output_dir, f"{name}.npy")
+        video_files = sorted(
+            f for f in os.listdir(speaker_path) if f.endswith(".mpg")
+        )
+
+        for vf in video_files:
+            name = os.path.splitext(vf)[0]
+            align_path = os.path.join(align_dir, f"{name}.align")
+            if os.path.exists(align_path):
+                unique_name = f"{speaker}_{name}"
+                samples.append(
+                    (os.path.join(speaker_path, vf), align_path, unique_name)
+                )
+
+    print(f"Discovered {len(samples)} videos across {len(speaker_dirs)} speakers")
+    return samples
+
+
+def preprocess_dataset(data_dir: str, output_dir: str):
+    """Preprocess all videos in data_dir and save as .npy files."""
+    os.makedirs(output_dir, exist_ok=True)
+
+    samples = discover_video_samples(data_dir)
+    if not samples:
+        print("[ERROR] No video samples found. Check your data directory layout.")
+        return
+
+    # Also copy alignment files into a single flat align/ directory alongside output
+    align_output_dir = os.path.join(os.path.dirname(output_dir), "align")
+    os.makedirs(align_output_dir, exist_ok=True)
+
+    valid_names = []
+    skipped = 0
+    start_time = time.time()
+
+    for i, (video_path, align_path, unique_name) in enumerate(samples):
+        output_path = os.path.join(output_dir, f"{unique_name}.npy")
 
         # Skip if already preprocessed
         if os.path.exists(output_path):
-            valid_names.append(name)
+            valid_names.append(unique_name)
+            # Still copy alignment if missing
+            align_dst = os.path.join(align_output_dir, f"{unique_name}.align")
+            if not os.path.exists(align_dst):
+                _copy_file(align_path, align_dst)
+            skipped += 1
             continue
 
-        video_path = os.path.join(data_dir, vf)
-        frames = extract_lip_frames(video_path)
-        np.save(output_path, frames)
-        valid_names.append(name)
+        try:
+            frames = extract_lip_frames(video_path)
+            np.save(output_path, frames)
+            valid_names.append(unique_name)
 
-        if (i + 1) % 100 == 0 or (i + 1) == len(video_files):
+            # Copy alignment file to flat output
+            align_dst = os.path.join(align_output_dir, f"{unique_name}.align")
+            _copy_file(align_path, align_dst)
+
+        except Exception as e:
+            print(f"  [ERROR] {unique_name}: {e}")
+            continue
+
+        if (i + 1) % 200 == 0 or (i + 1) == len(samples):
             elapsed = time.time() - start_time
-            rate = (i + 1) / elapsed
-            print(f"  [{i + 1}/{len(video_files)}] {rate:.1f} videos/sec — {name}.npy saved")
+            rate = (i + 1) / elapsed if elapsed > 0 else 0
+            print(
+                f"  [{i + 1}/{len(samples)}] {rate:.1f} videos/sec — {unique_name}.npy saved"
+            )
 
     # Write manifest
     manifest_path = os.path.join(output_dir, "manifest.txt")
@@ -65,21 +127,32 @@ def preprocess_dataset(data_dir: str, output_dir: str):
 
     elapsed = time.time() - start_time
     print(f"\n✓ Preprocessing complete!")
-    print(f"  {len(valid_names)} samples preprocessed in {elapsed:.1f}s")
+    print(f"  {len(valid_names)} samples ({skipped} cached, {len(valid_names) - skipped} new)")
     print(f"  Output directory: {output_dir}")
+    print(f"  Alignment directory: {align_output_dir}")
     print(f"  Manifest: {manifest_path}")
+    print(f"  Time: {elapsed:.1f}s")
 
     total_bytes = sum(
         os.path.getsize(os.path.join(output_dir, f))
-        for f in os.listdir(output_dir) if f.endswith(".npy")
+        for f in os.listdir(output_dir)
+        if f.endswith(".npy")
     )
     print(f"  Total size: {total_bytes / 1e6:.1f} MB")
+
+
+def _copy_file(src: str, dst: str):
+    """Copy a file from src to dst."""
+    import shutil
+    shutil.copy2(src, dst)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Preprocess GRID corpus videos")
     parser.add_argument("--data_dir", default="./data/", help="Raw data directory")
-    parser.add_argument("--output_dir", default="./data/preprocessed/", help="Output directory")
+    parser.add_argument(
+        "--output_dir", default="./data/preprocessed/", help="Output directory"
+    )
     args = parser.parse_args()
 
     preprocess_dataset(args.data_dir, args.output_dir)

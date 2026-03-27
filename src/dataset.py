@@ -29,6 +29,9 @@ def discover_samples(data_dir: str, preprocessed_dir: str):
     """
     Discover valid samples from manifest or directory scan.
 
+    Alignment files are expected in data_dir/align/ with matching names
+    to the .npy files in preprocessed_dir (may include speaker prefix).
+
     Returns:
         list of (npy_path, align_path) tuples
     """
