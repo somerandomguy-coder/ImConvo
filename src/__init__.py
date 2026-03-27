@@ -2,41 +2,49 @@ from src.utils import (
     MAX_FRAMES,
     FRAME_HEIGHT,
     FRAME_WIDTH,
-    MAX_LABEL_LEN,
-    PAD_IDX,
+    MAX_CHAR_LEN,
+    NUM_CHARS,
+    BLANK_IDX,
+    SPACE_IDX,
+    CHAR_LIST,
+    CHAR_TO_IDX,
     SILENCE_TOKENS,
-    SLOT_NAMES,
-    build_vocab,
-    parse_alignment,
-    pad_label,
+    text_to_char_indices,
+    char_indices_to_text,
+    parse_alignment_text,
+    parse_alignment_chars,
     extract_lip_frames,
 )
 from src.dataset import (
     create_dataset_pipeline,
-    create_dataset_from_samples,
+    create_ctc_dataset,
     discover_samples,
 )
-from src.model import LipReadingCNN, count_parameters
+from src.model import LipReadingCTC, count_parameters
 
 __all__ = [
     # Constants
     "MAX_FRAMES",
     "FRAME_HEIGHT",
     "FRAME_WIDTH",
-    "MAX_LABEL_LEN",
-    "PAD_IDX",
+    "MAX_CHAR_LEN",
+    "NUM_CHARS",
+    "BLANK_IDX",
+    "SPACE_IDX",
+    "CHAR_LIST",
+    "CHAR_TO_IDX",
     "SILENCE_TOKENS",
-    "SLOT_NAMES",
     # Utils
-    "build_vocab",
-    "parse_alignment",
-    "pad_label",
+    "text_to_char_indices",
+    "char_indices_to_text",
+    "parse_alignment_text",
+    "parse_alignment_chars",
     "extract_lip_frames",
     # Dataset
     "create_dataset_pipeline",
-    "create_dataset_from_samples",
+    "create_ctc_dataset",
     "discover_samples",
     # Model
-    "LipReadingCNN",
+    "LipReadingCTC",
     "count_parameters",
 ]

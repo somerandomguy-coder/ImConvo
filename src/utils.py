@@ -23,51 +23,79 @@ FRAME_WIDTH = 120
 MAX_FRAMES = 75
 
 # ---------------------------------------------------------------------------
-# Label constants
+# Character-level vocabulary (for CTC)
 # ---------------------------------------------------------------------------
 
-MAX_LABEL_LEN = 6   # GRID sentences have exactly 6 content words
-PAD_IDX = -1
+# a-z = 0..25, space = 26, CTC blank = 27
+CHAR_LIST = list("abcdefghijklmnopqrstuvwxyz")
+CHAR_TO_IDX = {c: i for i, c in enumerate(CHAR_LIST)}
+SPACE_IDX = 26
+BLANK_IDX = 27
+NUM_CHARS = 28  # 26 letters + space + blank
+
 SILENCE_TOKENS = {"sil", "sp"}
-SLOT_NAMES = ["command", "color", "preposition", "letter", "digit", "adverb"]
-
-# ---------------------------------------------------------------------------
-# Vocabulary
-# ---------------------------------------------------------------------------
+MAX_CHAR_LEN = 100  # max character sequence length (padded)
 
 
-def build_vocab(align_dir: str) -> dict:
-    """Build a word-to-index vocabulary from alignment files."""
-    words = set()
-    for path in glob.glob(os.path.join(align_dir, "*.align")):
-        with open(path) as f:
-            for line in f:
-                parts = line.strip().split()
-                if len(parts) == 3 and parts[2] not in SILENCE_TOKENS:
-                    words.add(parts[2])
-    word2idx = {w: i for i, w in enumerate(sorted(words))}
-    return word2idx
-
-
-def parse_alignment(align_path: str, word2idx: dict) -> list:
-    """Parse an alignment file and return a list of word indices."""
+def text_to_char_indices(text: str) -> list:
+    """Convert a text string to a list of character indices."""
     indices = []
+    for c in text:
+        if c == " ":
+            indices.append(SPACE_IDX)
+        elif c in CHAR_TO_IDX:
+            indices.append(CHAR_TO_IDX[c])
+    return indices
+
+
+def char_indices_to_text(indices: list) -> str:
+    """Convert character indices back to text (for decoding CTC output)."""
+    chars = []
+    for idx in indices:
+        if idx == SPACE_IDX:
+            chars.append(" ")
+        elif idx == BLANK_IDX:
+            continue  # skip blank
+        elif 0 <= idx < len(CHAR_LIST):
+            chars.append(CHAR_LIST[idx])
+    return "".join(chars)
+
+
+# ---------------------------------------------------------------------------
+# Alignment parsing
+# ---------------------------------------------------------------------------
+
+
+def parse_alignment_text(align_path: str) -> str:
+    """Parse an alignment file and return the sentence as a string."""
+    words = []
     with open(align_path) as f:
         for line in f:
             parts = line.strip().split()
             if len(parts) == 3 and parts[2] not in SILENCE_TOKENS:
-                if parts[2] in word2idx:
-                    indices.append(word2idx[parts[2]])
-    return indices
+                words.append(parts[2])
+    return " ".join(words)
 
 
-def pad_label(label_indices: list) -> np.ndarray:
-    """Pad or truncate label to MAX_LABEL_LEN."""
-    if len(label_indices) < MAX_LABEL_LEN:
-        label_indices += [PAD_IDX] * (MAX_LABEL_LEN - len(label_indices))
+def parse_alignment_chars(align_path: str) -> tuple:
+    """
+    Parse alignment file → character indices + length.
+
+    Returns:
+        (char_indices, length) — padded to MAX_CHAR_LEN
+    """
+    text = parse_alignment_text(align_path)
+    indices = text_to_char_indices(text)
+    length = len(indices)
+
+    # Pad to MAX_CHAR_LEN
+    if len(indices) < MAX_CHAR_LEN:
+        indices += [BLANK_IDX] * (MAX_CHAR_LEN - len(indices))
     else:
-        label_indices = label_indices[:MAX_LABEL_LEN]
-    return np.array(label_indices, dtype=np.int32)
+        indices = indices[:MAX_CHAR_LEN]
+        length = MAX_CHAR_LEN
+
+    return np.array(indices, dtype=np.int32), length
 
 
 # ---------------------------------------------------------------------------
