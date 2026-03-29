@@ -1,12 +1,21 @@
+import os
+import sys
+
+if not hasattr(sys, 'real_prefix') and not (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
+    print("\n[!] WARNING: You are not running in a virtual environment.")
+    print("Please run 'source .venv/bin/activate' or use './setup_and_run.sh'\n")
+    sys.exit(1)
+
 import cv2
 import numpy as np
 import tensorflow as tf
 import argparse
-import os
 
 # Your local imports
 from src import LipReadingCTC, char_indices_to_text
 from src.utils import *
+
+
 
 def get_args():
     parser = argparse.ArgumentParser(description="LipNet Real-time Inference")
@@ -22,7 +31,7 @@ def preprocess_frame(frame):
 
 def main():
     args = get_args()
-    stream_url = args.ip if args.ip.endswith("/video") else f"{args.ip}/video"
+    stream_url = args.ip
 
     # 1. Load Model
     checkpoint_path = "./checkpoints/best_ctc_model.keras"
@@ -34,7 +43,16 @@ def main():
         print("✓ Model weights loaded.")
 
     # 2. Setup Video
-    cap = cv2.VideoCapture(stream_url)
+    if stream_input.isdecimal():
+    # Local camera (0, 1, 2...)
+        cap = cv2.VideoCapture(int(stream_input))
+    else:
+        # IP Webcam URL - Ensure it ends with /video for most apps
+        if not stream_input.startswith(('http://', 'https://')):
+            stream_input = f"http://{stream_input}"
+        if not stream_input.endswith('/video') and ':' in stream_input:
+            stream_input = f"{stream_input}/video"
+        cap = cv2.VideoCapture(stream_input)
     frame_buffer = []
     BUFFER_SIZE = 75
     prediction_text = ""

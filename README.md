@@ -1,32 +1,57 @@
-# ImConvo
-lip-reading AI developed by convobeo team 
+# ImConvo 👄
+**Lip-reading AI developed by the Convobeo Team.**
 
-👄 LipNet Real-Time Inference (WSL2 + IP Webcam)
-This script allows you to run real-time lip-reading inference using a trained LipNet model. Since WSL2 has limited access to hardware webcams, this setup uses an IP Webcam (via your smartphone) to stream video over the local network.
+ImConvo is a LipNet-based spatio-temporal model designed to interpret speech from visual lip movements. This repository includes a full pipeline for training, evaluating, and running real-time inference.
 
-1. Prerequisites
-Smartphone: Android or iOS.
+## 🚀 Quick Start (WSL2 / Linux)
+The easiest way to set up the environment, dependencies, and data is to use the provided bash script:
 
-IP Webcam App: * Android: IP Webcam by Pavel Khlebovich
+```bash
+chmod +x setup_and_run.sh
+./setup_and_run.sh
+```
 
-[iOS: iVCam or similar]
+---
 
-Environment: Python 3.10+, TensorFlow 2.x, OpenCV.
+## 📸 Camera Setup Options
 
-2. Smartphone Configuration (Crucial)
-To ensure the model receives data in the format it was trained on, configure your IP Webcam app as follows:
+### Option A: Smartphone (Best for WSL2)
+Since WSL2 cannot easily access internal webcams, use an **IP Webcam** app to stream via your local network.
+1.  **Install App:** [IP Webcam (Android)](https://play.google.com/store/apps/details?id=com.pas.webcam) or iVCam (iOS).
+2.  **Configure App (Crucial):**
+    * **Resolution:** `352 x 288`
+    * **Frame Rate:** `25 FPS` (The model is strictly temporal; wrong FPS = wrong results).
+3.  **Run:** `python inference.py --ip http://192.168.0.69:8080`
 
-Video Resolution: 352 x 288 (Lower resolution reduces latency).
+### Option B: Direct USB/Integrated Camera
+If you are running on Native Windows or Linux:
+1.  Identify your camera index (usually `0` or `1`).
+2.  **Run:** `python inference.py --ip 0`
 
-Frame Rate (FPS): 25 FPS (LipNet is strictly temporal; mismatched FPS will cause poor results).
+---
 
-Start Server: Note the IP address provided (e.g., http://192.168.0.69:8080).
+## 📊 Project Structure & Reporting
+The project is organized to keep your data and results separate:
 
-3. Usage
-Run the script from your terminal using the --ip argument:
+* `data/`: Raw GRID dataset and preprocessed `.npy` files.
+* `checkpoints/`: Holds `best_ctc_model.keras` and training history.
+* `reports/`: 
+    * `eval_results/`: Detailed text logs from `test.py` showing Word Error Rate (WER).
+    * `plots/`: Visualizations of loss curves and performance summaries.
+* `src/`: Core model architecture and utility functions.
 
-Bash
-python inference.py --ip http://192.168.0.69:8080
-Exit: Press q while the video window is focused.
+---
 
-Positioning: Ensure your mouth is centered in the crop area. The prediction text will appear at the top-left of the window.
+## 🛠 Usage Modules
+
+| Command | Description |
+| :--- | :--- |
+| `python scripts/preprocess.py` | Converts `.mpg` videos to normalized `.npy` sequences. |
+| `python train.py` | Starts the CTC-based training loop. |
+| `python test.py` | Runs evaluation on the test set and generates a report in `reports/`. |
+| `python inference.py --ip <URL/ID>` | Launches the live monitor with the mouth bounding box. |
+
+**Exit:** Press **'q'** while the video window is focused to stop any live process.
+
+**Positioning:** Keep your lips within the yellow bounding box. A progress bar at the bottom will show you when the 75-frame buffer is full and ready for prediction.
+

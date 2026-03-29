@@ -5,10 +5,16 @@ Prerequisites:
     python scripts/preprocess.py      # run once to convert .mpg → .npy
     python train.py                   # train the model
 """
+import os
+import sys
+
+if not hasattr(sys, 'real_prefix') and not (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
+    print("\n[!] WARNING: You are not running in a virtual environment.")
+    print("Please run 'source .venv/bin/activate' or use './setup_and_run.sh'\n")
+    sys.exit(1)
 
 import json
 import math
-import os
 
 import numpy as np
 import tensorflow as tf
