@@ -9,9 +9,10 @@ import argparse
 import os
 
 # Must set config path BEFORE importing clearml
-os.environ["CLEARML_CONFIG_FILE"] = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "clearml.conf"
-)
+# os.environ["CLEARML_CONFIG_FILE"] = os.path.join(
+#     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "clearml.conf"
+# ) 
+# not on wsl 
 
 from clearml import Dataset, Task
 

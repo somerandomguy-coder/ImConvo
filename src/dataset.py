@@ -35,7 +35,7 @@ def discover_samples(data_dir: str, preprocessed_dir: str):
     Returns:
         list of (npy_path, align_path) tuples
     """
-    align_dir = os.path.join(data_dir, "align")
+    align_dir = os.path.join(preprocessed_dir, "align")
     manifest_path = os.path.join(preprocessed_dir, "manifest.txt")
 
     if os.path.exists(manifest_path):
@@ -61,10 +61,7 @@ def discover_samples(data_dir: str, preprocessed_dir: str):
 # ---------------------------------------------------------------------------
 # tf.data pipeline for CTC
 # ---------------------------------------------------------------------------
-
-
-def create_ctc_dataset(
-    npy_paths: list,
+def create_ctc_dataset(npy_paths: list,
     char_labels: np.ndarray,
     label_lengths: np.ndarray,
     batch_size: int,
@@ -77,29 +74,31 @@ def create_ctc_dataset(
         (video_frames, {"labels": char_indices, "label_length": length})
     """
 
-    def generator():
-        indices = np.arange(len(npy_paths))
-        if shuffle:
-            np.random.shuffle(indices)
-        for idx in indices:
-            frames = np.load(npy_paths[idx])         # (T, H, W)
-            frames = frames[..., np.newaxis]          # (T, H, W, 1)
-            frames = frames.astype(np.float32)
+    # 1. Create a dataset of indices or paths
+    dataset = tf.data.Dataset.from_tensor_slices((npy_paths, char_labels, label_lengths))
 
-            labels = char_labels[idx]
-            length = label_lengths[idx]
+    if shuffle:
+        dataset = dataset.shuffle(len(npy_paths))
 
-            yield frames, {"labels": labels, "label_length": length}
+    # 2. Define a loading function
+    def load_npy_file(path, label, length):
+        # We use tf.py_function because np.load isn't native TensorFlow
+        def _read_file(p):
+            frames = np.load(p.numpy().decode())
+            frames = frames[..., np.newaxis].astype(np.float32)
+            return frames
 
-    output_sig = (
-        tf.TensorSpec(shape=(MAX_FRAMES, FRAME_HEIGHT, FRAME_WIDTH, 1), dtype=tf.float32),
-        {
-            "labels": tf.TensorSpec(shape=(MAX_CHAR_LEN,), dtype=tf.int32),
-            "label_length": tf.TensorSpec(shape=(), dtype=tf.int32),
-        },
-    )
+        frames = tf.py_function(_read_file, [path], tf.float32)
+        # Re-set shapes (tf.py_function loses them)
+        frames.set_shape((MAX_FRAMES, FRAME_HEIGHT, FRAME_WIDTH, 1))
+        
+        return frames, {"labels": label, "label_length": length}
 
-    dataset = tf.data.Dataset.from_generator(generator, output_signature=output_sig)
+    # 3. USE PARALLEL CALLS HERE! 
+    # This replaces the single-threaded generator loop
+    dataset = dataset.map(load_npy_file, num_parallel_calls=tf.data.AUTOTUNE)
+
+    # 4. Batch, Repeat, and Prefetch
     dataset = dataset.batch(batch_size)
     dataset = dataset.repeat()
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
