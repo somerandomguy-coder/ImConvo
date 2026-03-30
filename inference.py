@@ -19,8 +19,9 @@ from src.utils import *
 
 def get_args():
     parser = argparse.ArgumentParser(description="LipNet Real-time Inference")
-    parser.add_argument("--ip", type=str, required=True, 
-                        help="IP Webcam URL (e.g., http://192.168.0.69:8080)")
+    parser.add_argument("--ip", type=str, required=False, default=None,
+                        help="IP Webcam URL (e.g., http://192.168.0.69:8080). "
+                             "If not provided, uses laptop webcam.")
     return parser.parse_args()
 
 def preprocess_frame(frame):
@@ -31,7 +32,13 @@ def preprocess_frame(frame):
 
 def main():
     args = get_args()
-    stream_url = args.ip
+    if args.ip:
+        stream_url = args.ip if args.ip.endswith("/video") else f"{args.ip}/video"
+        video_source = stream_url
+        print("📱 Using IP Webcam stream:", video_source)
+    else:
+        video_source = 0
+        print("💻 Using laptop webcam")
 
     # 1. Load Model
     checkpoint_path = "./checkpoints/best_ctc_model.keras"
@@ -43,16 +50,7 @@ def main():
         print("✓ Model weights loaded.")
 
     # 2. Setup Video
-    if stream_input.isdecimal():
-    # Local camera (0, 1, 2...)
-        cap = cv2.VideoCapture(int(stream_input))
-    else:
-        # IP Webcam URL - Ensure it ends with /video for most apps
-        if not stream_input.startswith(('http://', 'https://')):
-            stream_input = f"http://{stream_input}"
-        if not stream_input.endswith('/video') and ':' in stream_input:
-            stream_input = f"{stream_input}/video"
-        cap = cv2.VideoCapture(stream_input)
+    cap = cv2.VideoCapture(video_source)
     frame_buffer = []
     BUFFER_SIZE = 75
     prediction_text = ""
