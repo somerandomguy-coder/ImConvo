@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
 import { useCamera } from "@/hooks/useCamera";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const MOCK_PHRASES = [
   "set blue by a five now",
@@ -31,7 +31,7 @@ export default function LiveCapture() {
     setFrameCount(0);
   }, [stopCamera]);
 
-  // Start mock inference cycle when streaming begins
+  // Mock inference cycle when streaming begins
   useEffect(() => {
     if (isStreaming) {
       intervalRef.current = setInterval(() => {

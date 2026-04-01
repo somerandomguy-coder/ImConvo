@@ -25,6 +25,7 @@ export default function Home() {
     setIsLoading(true);
     setResultText("");
 
+    // Mock: simulate 3s inference delay
     setTimeout(() => {
       const mock = MOCK_RESULTS[Math.floor(Math.random() * MOCK_RESULTS.length)];
       setResultText(mock);
