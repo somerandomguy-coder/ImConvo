@@ -69,8 +69,14 @@ def discover_video_samples(data_dir: str):
     return samples
 
 
-def preprocess_dataset(data_dir: str, output_dir: str):
-    """Preprocess all videos in data_dir and save as .npy files."""
+def preprocess_dataset(data_dir: str, output_dir: str, force: bool = False):
+    """Preprocess all videos in data_dir and save as .npy files.
+    
+    Args:
+        data_dir: Path to raw data directory.
+        output_dir: Path to output directory.
+        force: If True, re-process all videos even if .npy files already exist.
+    """
     os.makedirs(output_dir, exist_ok=True)
 
     samples = discover_video_samples(data_dir)
@@ -89,8 +95,8 @@ def preprocess_dataset(data_dir: str, output_dir: str):
     for i, (video_path, align_path, unique_name) in enumerate(samples):
         output_path = os.path.join(output_dir, f"{unique_name}.npy")
 
-        # Skip if already preprocessed
-        if os.path.exists(output_path):
+        # Skip if already preprocessed (unless --force)
+        if os.path.exists(output_path) and not force:
             valid_names.append(unique_name)
             # Still copy alignment if missing
             align_dst = os.path.join(align_output_dir, f"{unique_name}.align")
@@ -101,6 +107,9 @@ def preprocess_dataset(data_dir: str, output_dir: str):
 
         try:
             frames = extract_lip_frames(video_path)
+            if frames is None:
+                # Face detection failed — skip this sample
+                continue
             np.save(output_path, frames)
             valid_names.append(unique_name)
 
@@ -153,6 +162,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output_dir", default="./data/preprocessed/", help="Output directory"
     )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Re-process all videos even if .npy files already exist"
+    )
     args = parser.parse_args()
 
-    preprocess_dataset(args.data_dir, args.output_dir)
+    if args.force:
+        print("⚠️  Force mode: re-processing all videos (overwriting existing .npy files)")
+
+    preprocess_dataset(args.data_dir, args.output_dir, force=args.force)
