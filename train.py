@@ -18,15 +18,8 @@ import math
 
 import numpy as np
 import tensorflow as tf
-
-from src import (
-    create_dataset_pipeline,
-    LipReadingCTC,
-    count_parameters,
-    NUM_CHARS,
-    char_indices_to_text,
-    BLANK_IDX,
-)
+from src import (BLANK_IDX, NUM_CHARS, LipReadingCTC, char_indices_to_text,
+                 count_parameters, create_dataset_pipeline)
 
 # ---------------------------------------------------------------------------
 # ClearML (optional)
@@ -176,7 +169,6 @@ def main():
 
     # ---- Create tf.data pipelines ----
     train_ds, val_ds, val_paths, val_labels, val_label_lengths = create_dataset_pipeline(
-        data_dir=CONFIG["data_dir"],
         preprocessed_dir=CONFIG["preprocessed_dir"],
         batch_size=CONFIG["batch_size"],
         val_split=CONFIG["val_split"],

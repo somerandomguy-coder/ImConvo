@@ -6,30 +6,23 @@ character-level labels for CTC training.
 """
 
 import os
+from collections.abc import Iterator
 
 import numpy as np
 import tensorflow as tf
-
-from src.utils import (
-    MAX_FRAMES,
-    FRAME_HEIGHT,
-    FRAME_WIDTH,
-    MAX_CHAR_LEN,
-    BLANK_IDX,
-    SILENCE_TOKENS,
-    parse_alignment_chars,
-)
+from src.utils import (BLANK_IDX, FRAME_HEIGHT, FRAME_WIDTH, MAX_CHAR_LEN,
+                       MAX_FRAMES, SILENCE_TOKENS, parse_alignment_chars)
 
 # ---------------------------------------------------------------------------
 # Sample discovery
 # ---------------------------------------------------------------------------
 
 
-def discover_samples(data_dir: str, preprocessed_dir: str):
+def discover_samples(preprocessed_dir: str) -> list[tuple[str, str]]:
     """
     Discover valid samples from manifest or directory scan.
 
-    Alignment files are expected in data_dir/align/ with matching names
+    Alignment files are expected in preprocessed_dir/align/ with matching names
     to the .npy files in preprocessed_dir (may include speaker prefix).
 
     Returns:
@@ -54,29 +47,58 @@ def discover_samples(data_dir: str, preprocessed_dir: str):
 # ---------------------------------------------------------------------------
 # tf.data pipeline for CTC
 # ---------------------------------------------------------------------------
-def create_ctc_dataset(npy_paths: list,
+def create_ctc_dataset(
+    npy_paths: list[str],
     char_labels: np.ndarray,
     label_lengths: np.ndarray,
     batch_size: int,
     shuffle: bool = True,
-):
+) -> tf.data.Dataset:
     """
-    Create a tf.data.Dataset for CTC training.
+    Creates a high-performance tf.data.Dataset for CTC training.
 
-    Yields:
-        (video_frames, {"labels": char_indices, "label_length": length})
+    This pipeline handles parallel loading of .npy files, shape restoration,
+    batching, and prefetching to ensure maximum GPU utilization.
+
+    Args:
+        npy_paths: List of absolute paths to preprocessed .npy video files.
+        char_labels: 2D array of shape (N, MAX_CHAR_LEN) containing padded label indices.
+        label_lengths: 1D array of shape (N,) containing the true length of each sentence.
+        batch_size: Number of samples per training batch.
+        shuffle: Whether to shuffle the data at the start of each epoch.
+
+    Returns:
+        A tf.data.Dataset yielding (frames, label_dict) batches.
     """
-
     # 1. Create a dataset of indices or paths
-    dataset = tf.data.Dataset.from_tensor_slices((npy_paths, char_labels, label_lengths))
+    dataset = tf.data.Dataset.from_tensor_slices(
+        (npy_paths, char_labels, label_lengths)
+    )
 
     if shuffle:
         dataset = dataset.shuffle(len(npy_paths))
 
     # 2. Define a loading function
-    def load_npy_file(path, label, length):
+    def load_npy_file(
+        path: tf.Tensor, label: tf.Tensor, length: tf.Tensor
+    ) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
+        """
+        TensorFlow mapper function to load video frames and format labels.
+
+        Args:
+            path: A scalar string Tensor containing the path to the .npy file.
+            label: An integer Tensor containing the padded character indices.
+            length: A scalar integer Tensor representing the actual (unpadded) label length.
+
+        Returns:
+            A tuple (frames, label_dict) where:
+                - frames: A float32 Tensor of shape (MAX_FRAMES, H, W, 1).
+                - label_dict: A dictionary containing 'labels' and 'label_length'
+                  required for Keras CTC loss.
+        """
+
         # We use tf.py_function because np.load isn't native TensorFlow
-        def _read_file(p):
+        def _read_file(p: tf.Tensor) -> np.ndarray:
             frames = np.load(p.numpy().decode())
             frames = frames[..., np.newaxis].astype(np.float32)
             return frames
@@ -84,10 +106,10 @@ def create_ctc_dataset(npy_paths: list,
         frames = tf.py_function(_read_file, [path], tf.float32)
         # Re-set shapes (tf.py_function loses them)
         frames.set_shape((MAX_FRAMES, FRAME_HEIGHT, FRAME_WIDTH, 1))
-        
+
         return frames, {"labels": label, "label_length": length}
 
-    # 3. USE PARALLEL CALLS HERE! 
+    # 3. USE PARALLEL CALLS HERE!
     # This replaces the single-threaded generator loop
     dataset = dataset.map(load_npy_file, num_parallel_calls=tf.data.AUTOTUNE)
 
@@ -104,19 +126,14 @@ def create_ctc_dataset(npy_paths: list,
 
 
 def create_dataset_pipeline(
-    data_dir: str,
-    preprocessed_dir: str,
-    batch_size: int,
-    val_split: float = 0.2,
-    seed: int = 42,
-):
+    preprocessed_dir: str, batch_size: int, val_split: float = 0.2, seed: int = 42)-> tuple[tf.data.Dataset, tf.data.Dataset, list[str], np.ndarray, np.ndarray]:
     """
     Build train/val tf.data pipelines for CTC training.
 
     Returns:
         train_ds, val_ds, val_paths, val_labels, val_label_lengths
     """
-    samples = discover_samples(data_dir, preprocessed_dir)
+    samples = discover_samples(preprocessed_dir)
     print(f"[Dataset] Discovered {len(samples)} preprocessed samples.")
 
     all_npy_paths = []

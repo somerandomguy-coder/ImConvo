@@ -25,17 +25,16 @@ if project_root not in sys.path:
 import cv2
 import numpy as np
 import tensorflow as tf
-
-from src.dataset import create_ctc_dataset, discover_samples
+from src.dataset import (create_ctc_dataset, create_dataset_pipeline,
+                         discover_samples)
 from src.utils import (FRAME_HEIGHT, FRAME_WIDTH, MAX_FRAMES,
-                       parse_alignment_chars)
+                       char_indices_to_text, parse_alignment_chars)
 
 
-def test_dataset_pipeline(data_dir, preprocessed_dir):
+def test_dataset_pipeline(preprocessed_dir):
     print("--- 1. Testing Sample Discovery ---")
-    samples = discover_samples(data_dir, preprocessed_dir)
+    samples = discover_samples(preprocessed_dir)
     print(f"Total samples found: {len(samples)}")
-
     if len(samples) == 0:
         print("ERROR: No samples found. Check your paths!")
         return
@@ -53,8 +52,6 @@ def test_dataset_pipeline(data_dir, preprocessed_dir):
     print(f"Parsed Labels: {char_indices}")
     print(f"Label Length: {length}")
     
-    # ADD THIS:
-    from src.utils import char_indices_to_text
 
     # We only decode up to 'length' to ignore the padding (27s)
     decoded_text = char_indices_to_text(char_indices[:length])
@@ -143,4 +140,40 @@ if __name__ == "__main__":
     if not os.path.exists(PREPROCESSED_DIR):
         print(f"ERROR: Path not found: {PREPROCESSED_DIR}")
     else:
-        test_dataset_pipeline(DATA_DIR, PREPROCESSED_DIR)
+        test_dataset_pipeline(PREPROCESSED_DIR)
+def test_full_pipeline():
+    """
+    Test 4: Verify the full create_dataset_pipeline logic (Split + TF Dataset).
+    """
+    print("\n--- 4. Testing Full Dataset Pipeline (Split & Batch) ---")
+    
+    # Use a small batch size for testing
+    BATCH_SIZE = 2
+    VAL_SPLIT = 0.5 # 50/50 split for easy counting in a small sample
+    
+    # 1. Run the pipeline
+    train_ds, val_ds, val_paths, val_labels, val_lengths = create_dataset_pipeline(
+        preprocessed_dir="./data_sample/preprocessed", 
+        batch_size=BATCH_SIZE, 
+        val_split=VAL_SPLIT
+    )
+
+    # 2. Check Split Logic
+    # If you have 4 samples, a 0.5 split should give 2 train and 2 val
+    print(f"Validation paths returned: {len(val_paths)}")
+    assert len(val_paths) > 0, "Validation set is empty!"
+
+    # 3. Pull one batch from Train and Val to see if they work
+    for name, ds in [("Train", train_ds), ("Validation", val_ds)]:
+        # .take(1) gets exactly one batch
+        for frames, label_data in ds.take(1):
+            print(f"[{name} Batch] Frames shape: {frames.shape}")
+            print(f"[{name} Batch] Labels shape: {label_data['labels'].shape}")
+            
+            # Verify the frames are normalized (0.0 to 1.0)
+            assert np.max(frames) <= 1.0, f"{name} frames not normalized!"
+            assert frames.shape == (BATCH_SIZE, 75, 80, 120, 1), f"{name} shape mismatch!"
+
+    print("SUCCESS: Full pipeline split and batching verified.")
+
+test_full_pipeline()

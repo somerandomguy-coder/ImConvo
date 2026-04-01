@@ -6,9 +6,8 @@ Uses CTC loss (via tf.nn.ctc_loss) for alignment-free sequence prediction.
 """
 
 import tensorflow as tf
-from keras import layers, Model
-
-from src.utils import MAX_FRAMES, BLANK_IDX, NUM_CHARS
+from keras import Model, layers
+from src.utils import BLANK_IDX, MAX_FRAMES, NUM_CHARS
 
 
 class LipReadingCTC(Model):
