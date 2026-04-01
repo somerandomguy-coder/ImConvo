@@ -39,6 +39,32 @@ The project is organized to keep your data and results separate:
     * `eval_results/`: Detailed text logs from `test.py` showing Word Error Rate (WER).
     * `plots/`: Visualizations of loss curves and performance summaries.
 * `src/`: Core model architecture and utility functions.
+* `frontend/`: Next.js web application for the UI.
+
+---
+
+## 🌐 Frontend (Web UI)
+The `frontend/` directory contains a **Next.js** web application built with React, TypeScript, and Tailwind CSS.
+
+### Prerequisites
+- [Node.js](https://nodejs.org/) (v18+)
+- [pnpm](https://pnpm.io/) package manager
+
+### Setup & Run
+```bash
+cd frontend
+pnpm install
+pnpm dev
+```
+The dev server will start at `http://localhost:3000`.
+
+### Available Scripts
+| Command | Description |
+| :--- | :--- |
+| `pnpm dev` | Start development server with hot reload |
+| `pnpm build` | Build for production |
+| `pnpm start` | Start production server |
+
 
 ---
 

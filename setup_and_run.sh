@@ -38,14 +38,29 @@ if [ ! -d "./data/preprocessed" ]; then
     fi
 fi
 
-# --- 4. Main Menu ---
+# --- 4. Frontend Setup ---
+if [ -d "./frontend" ]; then
+    echo "🌐 Setting up frontend..."
+    if ! command -v pnpm &> /dev/null; then
+        echo "📦 pnpm not found. Installing pnpm..."
+        npm install -g pnpm
+    fi
+    pushd frontend > /dev/null
+    echo "📥 Installing frontend dependencies..."
+    pnpm install
+    popd > /dev/null
+    echo "✅ Frontend setup complete."
+fi
+
+# --- 5. Main Menu ---
 echo "------------------------------------------------"
 echo "✅ Setup Complete. What would you like to do?"
 echo "1) Train the model (train.py)"
 echo "2) Evaluate model on test data (test.py)"
 echo "3) Run Live Inference (inference.py)"
-echo "4) Exit"
-read -p "Select an option [1-3]: " choice
+echo "4) Start Frontend Dev Server"
+echo "5) Exit"
+read -p "Select an option [1-5]: " choice
 
 case $choice in
     1)
@@ -59,6 +74,10 @@ case $choice in
         python3 inference.py --ip "$ip_url"
         ;;
     4)
+        echo "🌐 Starting Frontend Dev Server..."
+        cd frontend && pnpm dev
+        ;;
+    5)
         echo "👋 Goodbye!"
         exit 0
         ;;
