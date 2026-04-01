@@ -61,7 +61,8 @@ BLANK_IDX = 27
 NUM_CHARS = 28  # 26 letters + space + blank
 
 SILENCE_TOKENS = {"sil", "sp"}
-MAX_CHAR_LEN = 100  # max character sequence length (padded)
+MAX_CHAR_LEN = 40 # max character sequence length (padded)
+# hotfix: sentence usually only around 40 character
 
 
 def text_to_char_indices(text: str) -> list:
@@ -117,7 +118,8 @@ def parse_alignment_chars(align_path: str) -> tuple:
 
     # Pad to MAX_CHAR_LEN
     if len(indices) < MAX_CHAR_LEN:
-        indices += [0] * (MAX_CHAR_LEN - len(indices))  # pad with 0 (ignored via label_length)
+        indices += [BLANK_IDX] * (MAX_CHAR_LEN - len(indices))  # pad with 0 (ignored via label_length)
+        # hotfix: pad with blank_idx instead
     else:
         indices = indices[:MAX_CHAR_LEN]
         length = MAX_CHAR_LEN
@@ -291,11 +293,20 @@ def extract_lip_frames(video_path: str) -> np.ndarray:
 
     # --- Pass 3: Crop, grayscale, resize ---
     for frame in raw_frames:
-        lip = frame[y_start:y_end, x_start:x_end]
+    # Ensure the crop is within the actual frame dimensions
+        y1, y2 = max(0, y_start), min(frame.shape[0], y_end)
+        x1, x2 = max(0, x_start), min(frame.shape[1], x_end)
+        
+        lip = frame[y1:y2, x1:x2]
+        
+        # If for some reason the crop is still empty, use a black frame 
+        # instead of 'continue' to keep the timing consistent.
         if lip.size == 0:
-            continue
-        lip_gray = cv2.cvtColor(lip, cv2.COLOR_BGR2GRAY)
-        lip_resized = cv2.resize(lip_gray, (FRAME_WIDTH, FRAME_HEIGHT))
+            lip_resized = np.zeros((FRAME_HEIGHT, FRAME_WIDTH), dtype=np.uint8)
+        else:
+            lip_gray = cv2.cvtColor(lip, cv2.COLOR_BGR2GRAY)
+            lip_resized = cv2.resize(lip_gray, (FRAME_WIDTH, FRAME_HEIGHT))
+            
         frames.append(lip_resized)
 
     if len(frames) == 0:
