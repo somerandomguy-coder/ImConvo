@@ -38,15 +38,8 @@ def discover_samples(data_dir: str, preprocessed_dir: str):
     align_dir = os.path.join(preprocessed_dir, "align")
     manifest_path = os.path.join(preprocessed_dir, "manifest.txt")
 
-    if os.path.exists(manifest_path):
-        with open(manifest_path) as f:
-            names = [line.strip() for line in f if line.strip()]
-    else:
-        names = sorted(
-            os.path.splitext(f)[0]
-            for f in os.listdir(preprocessed_dir)
-            if f.endswith(".npy")
-        )
+    with open(manifest_path) as f:
+        names = [line.strip() for line in f if line.strip()]
 
     samples = []
     for name in names:
