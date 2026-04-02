@@ -116,7 +116,7 @@ def create_ctc_dataset(
     # 4. Batch, Repeat, and Prefetch
     dataset = dataset.batch(batch_size)
     dataset = dataset.repeat()
-    dataset = dataset.prefetch(tf.data.AUTOTUNE)
+    dataset = dataset.prefetch(5)
     return dataset
 
 

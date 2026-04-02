@@ -11,6 +11,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from src.utils import FRAME_HEIGHT, FRAME_WIDTH, MAX_FRAMES
 
 def _copy_file(src, dst):
     """Helper to copy alignment files to the flat directory."""
@@ -35,24 +36,38 @@ def process_video_to_numpy(video_path):
         ret, frame = cap.read()
         if not ret:
             break
-
-        # 1. Grayscale
+        
+        # 1. Convert to Grayscale
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-        # 2. Normalization (0 to 1)
-        # You can also use (gray - mean) / std if you have specific dataset stats
-        norm_gray = gray.astype(np.float32) / 255.0
-
-        frames.append(norm_gray)
-
+        
+        # 2. Resize to the target dimensions (80x120) 
+        # Even though we aren't cropping, we must resize the full frame 
+        # so the model gets the expected input shape.
+        resized = cv2.resize(gray, (FRAME_WIDTH, FRAME_HEIGHT))
+        
+        # 3. Normalize to [0, 1]
+        normalized = resized.astype(np.float32) / 255.0
+        frames.append(normalized)
+    
     cap.release()
-
+    
     if len(frames) == 0:
         return None
+        
+    frames = np.array(frames, dtype=np.float32)
 
-    # Convert to array: (Frames, Height, Width)
-    return np.array(frames)
-
+    # --- Padding or Truncating (The "Reshape" logic) ---
+    # This ensures every .npy file is exactly (75, 80, 120)
+    T = frames.shape[0]
+    if T < MAX_FRAMES:
+        # Create zero padding for the remaining frames
+        pad = np.zeros((MAX_FRAMES - T, FRAME_HEIGHT, FRAME_WIDTH), dtype=np.float32)
+        frames = np.concatenate([frames, pad], axis=0)
+    else:
+        # Truncate if the video is longer than 75 frames
+        frames = frames[:MAX_FRAMES]
+        
+    return frames
 
 def process_single_sample(sample_info, output_dir, align_output_dir, force):
     video_path, align_path, unique_name = sample_info
@@ -121,7 +136,7 @@ def main():
     )
     parser.add_argument("--force", action="store_true", help="Overwrite existing files")
     parser.add_argument(
-        "--cores", type=int, default=cpu_count(), help="Number of CPU cores"
+        "--cores", type=int, default=6, help="Number of CPU cores"
     )
     args = parser.parse_args()
 
