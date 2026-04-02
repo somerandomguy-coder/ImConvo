@@ -55,8 +55,8 @@ except BaseException as e:
 CONFIG = {
     "data_dir": "./data/",
     "preprocessed_dir": "./data/preprocessed/",
-    "batch_size": 8,
-    "num_epochs": 1,
+    "batch_size": 48,
+    "num_epochs": 100,
     "learning_rate": 3e-4,
     "weight_decay": 1e-4,
     "val_split": 0.2,
