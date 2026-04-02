@@ -36,7 +36,7 @@ try:
 
     task = Task.init(
         project_name="ImConvo",
-        task_name="LipReadingCTC_Training",
+        task_name="LipReadingCTC_Training_full_image_no_crop",
         task_type=Task.TaskTypes.training,
     )
     USE_CLEARML = True
