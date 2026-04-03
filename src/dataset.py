@@ -19,7 +19,7 @@ from src.utils import (BLANK_IDX, FRAME_HEIGHT, FRAME_WIDTH, MAX_CHAR_LEN,
 # ---------------------------------------------------------------------------
 
 
-def discover_samples(preprocessed_dir: str) -> list[tuple[str, str]]:
+def discover_samples(preprocessed_dir: str, manifest_path: str = "") -> list[tuple[str, str]]:
     """
     Discover valid samples from manifest or directory scan.
 
@@ -30,7 +30,8 @@ def discover_samples(preprocessed_dir: str) -> list[tuple[str, str]]:
         list of (npy_path, align_path) tuples
     """
     align_dir = os.path.join(preprocessed_dir, "align")
-    manifest_path = os.path.join(preprocessed_dir, "manifest.txt")
+    # Fallback file if can't find manifest.txt
+    manifest_path = manifest_path or os.path.join(preprocessed_dir, "manifest.txt")
 
     with open(manifest_path) as f:
         names = [line.strip() for line in f if line.strip()]
@@ -133,14 +134,14 @@ def create_ctc_dataset(
 
 
 def create_dataset_pipeline(
-    preprocessed_dir: str, batch_size: int, val_split: float = 0.2, seed: int = 42)-> tuple[tf.data.Dataset, tf.data.Dataset, list[str], np.ndarray, np.ndarray]:
+        preprocessed_dir: str, batch_size: int, val_split: float = 0.2, seed: int = 42, manifest_path: str = "")-> tuple[tf.data.Dataset, tf.data.Dataset, list[str], np.ndarray, np.ndarray]:
     """
     Build train/val tf.data pipelines for CTC training.
 
     Returns:
         train_ds, val_ds, val_paths, val_labels, val_label_lengths
     """
-    samples = discover_samples(preprocessed_dir)
+    samples = discover_samples(preprocessed_dir=preprocessed_dir, manifest_path=manifest_path)
     print(f"[Dataset] Discovered {len(samples)} preprocessed samples.")
 
     all_npy_paths = []

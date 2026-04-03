@@ -1,6 +1,8 @@
-import matplotlib.pyplot as plt
-import os
 import json
+import os
+
+import matplotlib.pyplot as plt
+
 
 def save_loss_plot(history_path, output_dir="reports/plots"):
     """Reads training_history.json and saves a Loss/Accuracy plot."""
