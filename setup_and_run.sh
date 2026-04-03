@@ -26,7 +26,7 @@ fi
 if [ ! -d "./data" ]; then
     read -p "⚠️ Raw data (GRID) not found. Download it now? (y/n): " dl_data
     if [[ $dl_data == "y" ]]; then
-        python3 scripts/download_data.py
+        python3 scripts/dataset/download_data.py
     fi
 fi
 

@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.utils import FRAME_HEIGHT, FRAME_WIDTH, MAX_FRAMES
 
+
 def _copy_file(src, dst):
     """Helper to copy alignment files to the flat directory."""
     import shutil

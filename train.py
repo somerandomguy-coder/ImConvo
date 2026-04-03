@@ -18,6 +18,7 @@ import math
 
 import numpy as np
 import tensorflow as tf
+
 from src import (BLANK_IDX, NUM_CHARS, LipReadingCTC, char_indices_to_text,
                  count_parameters, create_dataset_pipeline)
 
@@ -66,7 +67,7 @@ CONFIG = {
 
 if USE_CLEARML and task:
     task.connect(CONFIG)
-
+    print(f"[ClearML] Training Node active. Using data from: {CONFIG['preprocessed_dir']}")
 
 # ---------------------------------------------------------------------------
 # ClearML callback
@@ -158,6 +159,30 @@ def main():
 
     print(f"TensorFlow version: {tf.__version__}")
     print(f"GPUs available: {tf.config.list_physical_devices('GPU')}")
+    
+    if USE_CLEARML and task:
+        # Get the pipeline details (if running as part of one)
+        parent_tasks = task.get_parent_tasks()
+        
+        if parent_tasks:
+            # We assume the first parent is the Preprocessing task
+            preprocess_task = parent_tasks[0]
+            print(f"[ClearML] Pipeline detected! Parent Task: {preprocess_task.id}")
+            
+            # Fetch the manifest artifact from the Preprocessing task
+            manifest_artifact = preprocess_task.artifacts.get('manifest')
+            
+            if manifest_artifact:
+                # This doesn't download the 100GB; it just gets the small .txt file
+                manifest_local_path = manifest_artifact.get_local_copy()
+                print(f"✓ Manifest verified: {manifest_local_path}")
+                
+                # OPTIONAL: You can parse the manifest here to get the exact count
+                with open(manifest_local_path, 'r') as f:
+                    num_samples = len(f.readlines())
+                print(f"✓ Found {num_samples} valid preprocessed samples.")
+            else:
+                print("[WARN] No manifest artifact found in parent task. Using local fallback.")
 
     # ---- Check preprocessing ----
     if not os.path.isdir(CONFIG["preprocessed_dir"]):

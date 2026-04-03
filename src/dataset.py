@@ -10,6 +10,7 @@ from collections.abc import Iterator
 
 import numpy as np
 import tensorflow as tf
+
 from src.utils import (BLANK_IDX, FRAME_HEIGHT, FRAME_WIDTH, MAX_CHAR_LEN,
                        MAX_FRAMES, SILENCE_TOKENS, parse_alignment_chars)
 
@@ -99,9 +100,15 @@ def create_ctc_dataset(
 
         # We use tf.py_function because np.load isn't native TensorFlow
         def _read_file(p: tf.Tensor) -> np.ndarray:
-            frames = np.load(p.numpy().decode())
-            frames = frames[..., np.newaxis].astype(np.float32)
-            return frames
+            try:
+                frames = np.load(p.numpy().decode())
+                frames = frames[..., np.newaxis].astype(np.float32)
+                return frames
+            except Exception as e:
+                # If a file is corrupted, return a "Zero" tensor 
+                # so the training doesn't crash.
+                print(f"\n[ERROR] Failed to load {p.numpy().decode()}: {e}")
+                return np.zeros((MAX_FRAMES, FRAME_HEIGHT, FRAME_WIDTH, 1), dtype=np.float32)
 
         frames = tf.py_function(_read_file, [path], tf.float32)
         # Re-set shapes (tf.py_function loses them)

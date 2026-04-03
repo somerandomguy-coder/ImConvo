@@ -7,6 +7,7 @@ from functools import partial
 from multiprocessing import Pool, cpu_count
 
 import numpy as np
+from clearml import Dataset, Task
 
 # Add project root to path so we can find src.utils
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -78,23 +79,43 @@ def discover_video_samples(data_dir):
                     f"{speaker}_{name}"
                 ))
     return samples
-
 def main():
+    # 1. Initialize ClearML Task
+    task = Task.init(
+        project_name="ImConvo",
+        task_name="preprocess_dataset",
+        task_type=Task.TaskTypes.data_processing
+    )
+
     parser = argparse.ArgumentParser(description="Multi-core GRID Preprocessing")
-    parser.add_argument("--data_dir", default="./data/", help="Raw data root")
+    # We define defaults, but ClearML will override these if changed in the UI
+    parser.add_argument("--dataset_id", help="Input ClearML dataset ID")
     parser.add_argument("--output_dir", default="./data/preprocessed/", help="NPY output folder")
     parser.add_argument("--force", action="store_true", help="Overwrite existing files")
-    parser.add_argument("--cores", type=int, default=cpu_count(), help="Number of CPU cores to use")
+    parser.add_argument("--cores", type=int, default=cpu_count(), help="CPU cores")
     args = parser.parse_args()
+
+    # 2. Link Arguments to UI
+    task.connect(args)
+
+    # 3. Get Data from previous step or ID
+    # If this is part of a pipeline, we pull the local path
+    print(f"--- Fetching Raw Data ---")
+    ds = Dataset.get(dataset_id=args.dataset_id)
+    raw_data_dir = ds.get_local_copy()
 
     # Setup directories
     os.makedirs(args.output_dir, exist_ok=True)
     align_output_dir = os.path.join(os.path.dirname(args.output_dir.rstrip('/')), "align")
     os.makedirs(align_output_dir, exist_ok=True)
 
-    samples = discover_video_samples(args.data_dir)
+    # ... [keep your discover_video_samples and Pool logic] ...
+    # Replace args.data_dir with raw_data_dir in your logic
+    samples = discover_video_samples(raw_data_dir)
+    
+    samples = discover_video_samples(raw_data_dir)
     if not samples:
-        print(f"No samples found in {args.data_dir}!")
+        print(f"No samples found in {raw_data_dir}!")
         return
 
     print(f"--- GRID Multi-Core Preprocessing ---")
@@ -112,6 +133,7 @@ def main():
     start_time = time.time()
     valid_names = []
 
+    # ... [Pool execution logic] ...
     # Execution Pool
     try:
         with Pool(processes=args.cores) as pool:
@@ -127,13 +149,18 @@ def main():
     except KeyboardInterrupt:
         print("\nStopping... Saving current manifest.")
 
-    # Save manifest.txt
+
+    # 4. Finalizing and Reporting
     manifest_path = os.path.join(args.output_dir, "manifest.txt")
     with open(manifest_path, "w") as f:
         f.write("\n".join(sorted(valid_names)))
 
-    print(f"\n\n✓ Finished in {time.time() - start_time:.1f} seconds.")
-    print(f"Total valid samples saved: {len(valid_names)}")
+    # Upload manifest as artifact so the Train node knows what's ready
+    task.upload_artifact("manifest", artifact_object=manifest_path)
+    # We do NOT upload the 100GB .npy files to ClearML (saving your free tier!)
+    
+    print(f"\n✓ Preprocessing Complete. Manifest saved.")
+    task.close()
 
 if __name__ == "__main__":
     main()
