@@ -36,7 +36,7 @@ try:
 
     task = Task.init(
         project_name="ImConvo",
-        task_name="LipReadingCTC_Training_full_image_no_crop",
+        task_name="LipReadingCTC_Training",
         task_type=Task.TaskTypes.training,
     )
     USE_CLEARML = True
@@ -56,7 +56,7 @@ CONFIG = {
     "data_dir": "./data/",
     "preprocessed_dir": "./data/preprocessed/",
     "batch_size": 48,
-    "num_epochs": 100,
+    "num_epochs": 1,
     "learning_rate": 3e-4,
     "weight_decay": 1e-4,
     "val_split": 0.2,
@@ -165,6 +165,11 @@ def main():
             f"\n[ERROR] Preprocessed data not found at: {CONFIG['preprocessed_dir']}\n"
             f"Run this first:  python scripts/preprocess.py\n"
         )
+        if USE_CLEARML and task:
+            try:
+                task.close()
+            except BaseException:
+                pass
         return
 
     # ---- Create tf.data pipelines ----
