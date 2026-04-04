@@ -54,10 +54,11 @@ except BaseException as e:
 # ---------------------------------------------------------------------------
 
 CONFIG = {
+    "parents_ids" : ["8c253646b6f245dfadf520393058a34e"], # preprocess task
     "data_dir": "./data/",
     "preprocessed_dir": "./data/preprocessed/",
     "batch_size": 48,
-    "num_epochs": 100,
+    "num_epochs": 1,
     "learning_rate": 3e-4,
     "weight_decay": 1e-4,
     "val_split": 0.2,
@@ -162,7 +163,7 @@ def main():
     
     if USE_CLEARML and task:
         # Get the pipeline details (if running as part of one)
-        parent_tasks = task.get_parent_tasks()
+        parent_tasks = Task.get_tasks(task_ids=CONFIG["parents_ids"])
         
         if parent_tasks:
             # We assume the first parent is the Preprocessing task

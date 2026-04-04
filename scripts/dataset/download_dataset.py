@@ -7,7 +7,7 @@ from clearml import Dataset, Task
 PROJECT_NAME = "ImConvo"
 # We'll use a relative path that works inside the repo structure
 DEFAULT_DATA_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "data"
+    os.path.dirname(os.path.abspath(__file__)), "..", ".." ,"data"
 )
 
 
@@ -34,7 +34,7 @@ def main(dataset_id=None):
     ds = Dataset.get(dataset_id=args["dataset_id"])
 
     # We use get_mutable_local_copy so you can preprocess into the same folder later
-    local_path = ds.get_mutable_local_copy(target_path=args["destination_dir"])
+    local_path = ds.get_mutable_local_copy(target_folder=args["destination_dir"])
 
     # 5. Output the path for the Pipeline
     # This allows the 'Preprocess' node to know where the data landed

@@ -80,33 +80,63 @@ def discover_video_samples(data_dir):
                 ))
     return samples
 def main():
-    # 1. Initialize ClearML Task
-    task = Task.init(
-        project_name="ImConvo",
-        task_name="preprocess_dataset",
-        task_type=Task.TaskTypes.data_processing
-    )
+    
 
     parser = argparse.ArgumentParser(description="Multi-core GRID Preprocessing")
     # We define defaults, but ClearML will override these if changed in the UI
-    parser.add_argument("--dataset_id", help="Input ClearML dataset ID")
+    parser.add_argument("--parent", default="ad79af81ff2e44368fa8384a5d96577e", help="Input download task id")
     parser.add_argument("--output_dir", default="./data/preprocessed/", help="NPY output folder")
     parser.add_argument("--force", action="store_true", help="Overwrite existing files")
     parser.add_argument("--cores", type=int, default=cpu_count(), help="CPU cores")
     args = parser.parse_args()
 
+    # 1. Initialize ClearML Task
+    task = Task.init(
+        project_name="ImConvo",
+        task_name="preprocess_dataset",
+        task_type=Task.TaskTypes.data_processing,
+    )
+
     # 2. Link Arguments to UI
     task.connect(args)
 
-    # 3. Get Data from previous step or ID
-    # If this is part of a pipeline, we pull the local path
-    print(f"--- Fetching Raw Data ---")
-    ds = Dataset.get(dataset_id=args.dataset_id)
-    raw_data_dir = ds.get_local_copy()
+    # 3. Get Parent task and its artifact (path)
+    parent_tasks = Task.get_tasks(task_ids=[args.parent]) # This node have only 1 parent 
+    
+    if parent_tasks:
+        # We assume the first parent is the Download task
+        download_task = parent_tasks[0]
+        print(f"[ClearML] Pipeline detected! Parent Task: {download_task.id}")
+        
+        # Fetch the path artifact from the Download task
+        dataset_path_artifact = download_task.artifacts.get('dataset_path')
+        if dataset_path_artifact:
+            # Artifacts are often stored as dictionaries or objects
+            # Based on our previous script, it's {'path': '...'}
+            artifact_data = dataset_path_artifact.get()
+            raw_data_dir = artifact_data.get('path')
+            print(f"✓ Found path from parent artifact: {raw_data_dir}")
+
+    # 4. Fallback/Manual Logic
+    if not raw_data_dir:
+        # If no parent or artifact found, we fallback to the Dataset ID 
+        # (Make sure to add this to your argparse if you want to use it manually)
+        print(f"--- Fetching Raw Data via Dataset ID ---")
+        dataset_id = "98ddafeae8e64c359f89d435b52bea0f" # Or get from args
+        ds = Dataset.get(dataset_id=dataset_id)
+        raw_data_dir = ds.get_local_copy()
+
+    # Final Check
+    if not raw_data_dir or not os.path.exists(raw_data_dir):
+        print(f"[ERROR] Could not locate raw data directory!")
+        return
+        
+
+
 
     # Setup directories
     os.makedirs(args.output_dir, exist_ok=True)
-    align_output_dir = os.path.join(os.path.dirname(args.output_dir.rstrip('/')), "align")
+    align_output_dir = os.path.join(args.output_dir, "align")
     os.makedirs(align_output_dir, exist_ok=True)
 
     # ... [keep your discover_video_samples and Pool logic] ...
