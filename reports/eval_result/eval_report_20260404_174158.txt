@@ -1,0 +1,11 @@
+--- LipReading AI Evaluation Report ---
+Date: 2026-04-04T17:41:58.230150
+Model Task ID: 95ebd286b4ba4a1ea26c9dbb8bad2628
+Preprocess Task ID: 8c253646b6f245dfadf520393058a34e
+========================================
+Total Samples Evaluated: 200
+Average Word Error Rate: 0.9542 (95.4%)
+Average Char Error Rate: 0.5763 (57.6%)
+========================================
+
+Note: This report was generated automatically by the ImConvo Pipeline.
