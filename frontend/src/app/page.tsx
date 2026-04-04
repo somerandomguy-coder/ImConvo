@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import VideoUploader from "@/components/VideoUploader";
 import LiveCapture from "@/components/LiveCapture";
 import ResultDisplay from "@/components/ResultDisplay";
@@ -50,9 +51,10 @@ export default function Home() {
       <div className="w-full max-w-2xl space-y-8">
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">
+          <h1 className="flex items-center gap-4 text-3xl font-bold tracking-tight">
+            <Image src="/logo.png" alt="ImConvo" width={56} height={56} />
             ImConvo{" "}
-            <span className="ml-2 text-lg font-normal text-muted">
+            <span className="text-lg font-normal text-muted">
               Lip Reading AI
             </span>
           </h1>
