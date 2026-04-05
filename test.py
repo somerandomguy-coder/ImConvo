@@ -56,11 +56,21 @@ def main():
         task_type=Task.TaskTypes.testing
     )
     task.connect(args)
+    print('Arguments: {}'.format(args))
+
 
     # 2. Retrieve Model & Data Paths from Pipeline Parents
-    print(f"🔗 Linking to Training Task: {args.train_task_id}")
-    train_task = Task.get_task(task_id=args.train_task_id)
-    
+    print(f"🔗 Linking to Training Task")
+    artifact_file_path = args.train_task_id 
+
+    if os.path.exists(artifact_file_path) and os.path.isfile(artifact_file_path):
+        with open(artifact_file_path, 'r') as f:
+            # Read the ID string from the file and strip any whitespace/newlines
+            actual_parent_id = f.read().strip()
+        print(f"✓ Extracted Parent ID from artifact file: {actual_parent_id}")
+
+    train_task = Task.get_task(task_id=actual_parent_id) # This node have only 1 parent 
+
     # Get the best model artifact. ClearML downloads it to a temp local path.
     # Note: Ensure your train.py used task.update_output_model() or task.upload_artifact('model')
     model_artifact = train_task.artifacts.get('best_ctc_model') 
@@ -72,7 +82,16 @@ def main():
         checkpoint_path = model_artifact.get_local_copy()
 
     # Get Preprocessed Data Path
-    preprocess_task = Task.get_task(task_id=args.preprocess_task_id)
+    artifact_file_path = args.preprocess_task_id 
+
+    if os.path.exists(artifact_file_path) and os.path.isfile(artifact_file_path):
+        with open(artifact_file_path, 'r') as f:
+            # Read the ID string from the file and strip any whitespace/newlines
+            actual_parent_id = f.read().strip()
+        print(f"✓ Extracted Parent ID from artifact file: {actual_parent_id}")
+
+    preprocess_task = Task.get_task(task_id=actual_parent_id) 
+
     # Re-using the manifest logic we built
     manifest_artifact = preprocess_task.artifacts.get('manifest')
     manifest_local_path = manifest_artifact.get_local_copy()
@@ -189,7 +208,6 @@ def main():
         local_path=plot_output_path
     )
     print(f"✓ Loss plot uploaded to ClearML and saved to {plot_output_path}")
-    
     task.close()
 if __name__ == "__main__":
     main()

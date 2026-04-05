@@ -42,6 +42,9 @@ try:
     )
     USE_CLEARML = True
     print("[ClearML] Connected successfully.")
+    
+    taskID = task.task_id
+
 except BaseException as e:
     print(
         f"[ClearML] Not available ({type(e).__name__}: {e}). "
@@ -54,7 +57,7 @@ except BaseException as e:
 # ---------------------------------------------------------------------------
 
 CONFIG = {
-    "parents_ids" : ["8c253646b6f245dfadf520393058a34e"], # preprocess task
+    "parents_ids" : "8c253646b6f245dfadf520393058a34e", # preprocess task
     "data_dir": "./data/",
     "preprocessed_dir": "./data/preprocessed/",
     "batch_size": 48,
@@ -69,6 +72,7 @@ CONFIG = {
 if USE_CLEARML and task:
     task.connect(CONFIG)
     print(f"[ClearML] Training Node active. Using data from: {CONFIG['preprocessed_dir']}")
+    print('Arguments: {}'.format(CONFIG))
 
 # ---------------------------------------------------------------------------
 # ClearML callback
@@ -163,10 +167,18 @@ def main():
     
     if USE_CLEARML and task:
         # Get the pipeline details (if running as part of one)
-        parent_tasks = Task.get_tasks(task_ids=CONFIG["parents_ids"])
+        artifact_file_path = CONFIG["parents_ids"] 
+
+        if os.path.exists(artifact_file_path) and os.path.isfile(artifact_file_path):
+            with open(artifact_file_path, 'r') as f:
+                # Read the ID string from the file and strip any whitespace/newlines
+                actual_parent_id = f.read().strip()
+            print(f"✓ Extracted Parent ID from artifact file: {actual_parent_id}")
+
+        parent_tasks = Task.get_tasks(task_ids=[actual_parent_id]) # This node have only 1 parent 
+
         
         if parent_tasks:
-            # We assume the first parent is the Preprocessing task
             preprocess_task = parent_tasks[0]
             print(f"[ClearML] Pipeline detected! Parent Task: {preprocess_task.id}")
             
@@ -325,6 +337,7 @@ def main():
     with open(history_path, "w") as f:
         json.dump(history_data, f, indent=2)
     print(f"\nTraining history saved to {history_path}")
+    task.upload_artifact("taskID", artifact_object={"id": taskID})
 
     if USE_CLEARML and task:
         try:

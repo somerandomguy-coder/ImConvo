@@ -3,11 +3,12 @@ import os
 import re
 import sys
 import time
+import json
 from functools import partial
 from multiprocessing import Pool, cpu_count
 
 import numpy as np
-from clearml import Dataset, Task
+from clearml import Dataset, Task, StorageManager
 
 # Add project root to path so we can find src.utils
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -84,10 +85,11 @@ def main():
 
     parser = argparse.ArgumentParser(description="Multi-core GRID Preprocessing")
     # We define defaults, but ClearML will override these if changed in the UI
-    parser.add_argument("--parent", default="ad79af81ff2e44368fa8384a5d96577e", help="Input download task id")
+    parser.add_argument("--parent", default="TOBE_OVERRIDDEN", help="Input download task id")
     parser.add_argument("--output_dir", default="./data/preprocessed/", help="NPY output folder")
     parser.add_argument("--force", action="store_true", help="Overwrite existing files")
-    parser.add_argument("--cores", type=int, default=cpu_count(), help="CPU cores")
+    parser.add_argument("--cores", type=int, default=cpu_count()-1, help="CPU cores")
+    parser.add_argument("--remote", action="store_true", help="Overwrite existing files")
     args = parser.parse_args()
 
     # 1. Initialize ClearML Task
@@ -97,15 +99,69 @@ def main():
         task_type=Task.TaskTypes.data_processing,
     )
 
-    # 2. Link Arguments to UI
-    task.connect(args)
-
-    # 3. Get Parent task and its artifact (path)
-    parent_tasks = Task.get_tasks(task_ids=[args.parent]) # This node have only 1 parent 
     
+    taskID = task.task_id
+    # 2. Link Arguments to UI
+    # task.connect(args) clearml automated capture args doing task.connect will duplicate it
+    print('Arguments: {}'.format(args))
+    remote = args.remote
+    if remote:
+        task.execute_remotely()
+
+    # 1. Get the synced dictionary
+    actual_params = task.get_parameters_as_dict()
+
+    # 2. Extract the 'Args' sub-dictionary
+    injected_args = actual_params.get('Args', {})
+
+    # 3. Update your existing 'args' Namespace object
+    for key, value in injected_args.items():
+        # Only update if the key exists in your argparse setup
+        if hasattr(args, key):
+            # ClearML sends everything as strings, so we cast to the original type
+            orig_type = type(getattr(args, key))
+            try:
+                if orig_type == bool:
+                    setattr(args, key, str(value).lower() == 'true')
+                else:
+                    setattr(args, key, orig_type(value))
+            except (ValueError, TypeError):
+                setattr(args, key, value)
+
+    print(f"✓ Args object updated! New parent: {args.parent}")
+    
+    artifact_file_path = StorageManager.get_local_copy(remote_url=args.parent)
+    print(f"type of artifact_path: {type(artifact_file_path)}")
+    if artifact_file_path == None:
+        artifact_file_path = args.parent
+        print(f"{args.parent} is not a valid url")
+
+    if os.path.exists(str(artifact_file_path)) and os.path.isfile(str(artifact_file_path)):
+        try:
+            with open(artifact_file_path, 'r') as f:
+                # If it's a JSON file, parse it and look for the 'id' key
+                if str(artifact_file_path).endswith('.json'):
+                    data = json.load(f)
+                    # Look for 'id' at root or inside 'preview' based on your JSON structure
+                    actual_parent_id = data.get('id') or data.get('preview', {}).get('id')
+                    print(f"✓ Parsed ID from JSON file: {actual_parent_id}")
+                else:
+                    # If it's just a text file, read the raw string
+                    actual_parent_id = f.read().strip()
+                    print(f"✓ Read ID from text file: {actual_parent_id}")
+        except Exception as e:
+            print(f"  [WARN] Failed to parse file {artifact_file_path}: {e}")
+    else:
+        actual_parent_id = "d1f65631031248f2bd7485601e8e0b95"
+        print(f"⚠️ Directory/File not found. Using hardcoded fallback ID: {actual_parent_id}")
+
+    
+
+    parent_tasks = Task.get_task(task_id=actual_parent_id) # This node have only 1 parent 
+
     if parent_tasks:
         # We assume the first parent is the Download task
-        download_task = parent_tasks[0]
+        download_task = parent_tasks
         print(f"[ClearML] Pipeline detected! Parent Task: {download_task.id}")
         
         # Fetch the path artifact from the Download task
@@ -188,6 +244,8 @@ def main():
     # Upload manifest as artifact so the Train node knows what's ready
     task.upload_artifact("manifest", artifact_object=manifest_path)
     # We do NOT upload the 100GB .npy files to ClearML (saving your free tier!)
+    task.upload_artifact("taskID", artifact_object={"id": taskID})
+
     
     print(f"\n✓ Preprocessing Complete. Manifest saved.")
     task.close()
