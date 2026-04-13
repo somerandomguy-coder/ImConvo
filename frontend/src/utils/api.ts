@@ -34,10 +34,4 @@ export async function checkHealth(): Promise<HealthStatus> {
   return data;
 }
 
-/** Create a WebSocket connection for live lip-reading */
-export function createLiveSocket(): WebSocket {
-  const wsUrl = API_BASE_URL.replace(/^http/, "ws") + "/ws/live";
-  return new WebSocket(wsUrl);
-}
-
 export default api;
