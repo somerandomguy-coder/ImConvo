@@ -45,8 +45,13 @@ def main(args):
 
     os.makedirs(DEFAULT_DATA_DIR, exist_ok=True)
     # We use get_mutable_local_copy so you can preprocess into the same folder later
-    local_path = ds.get_mutable_local_copy(target_folder=DEFAULT_DATA_DIR)
-
+    if os.path.exists(DEFAULT_DATA_DIR) and os.listdir(DEFAULT_DATA_DIR):
+        print(f"✅ Data already detected in {DEFAULT_DATA_DIR}. Skipping sync to save time.")
+        local_path = DEFAULT_DATA_DIR
+    else:
+        print(f"📥 Folder empty or missing. Starting mutable sync...")
+        # If the folder is empty, ClearML can safely link/copy files here
+        local_path = ds.get_mutable_local_copy(target_folder=DEFAULT_DATA_DIR)
     # 5. Output the path for the Pipeline
     # This allows the 'Preprocess' node to know where the data landed
     task.upload_artifact("dataset_path", artifact_object={"path": local_path})

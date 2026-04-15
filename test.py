@@ -1,10 +1,11 @@
 import argparse
+import json
 import os
 from datetime import datetime
 
 import numpy as np
 import tensorflow as tf
-from clearml import Dataset, Task
+from clearml import Dataset, StorageManager, Task
 
 from src import (NUM_CHARS, LipReadingCTC, char_indices_to_text,
                  create_dataset_pipeline)
@@ -43,10 +44,12 @@ def compute_cer(reference: str, hypothesis: str) -> float:
 def main():
     parser = argparse.ArgumentParser()
     # IDs passed from PipelineController
-    parser.add_argument("--train_task_id", required=True, help="Task ID of the trainer")
-    parser.add_argument("--preprocess_task_id", required=True, help="Task ID of preprocessor")
+    parser.add_argument("--train_task_id", default="TOBE_OVERRIDDEN", help="Task ID of the trainer")
+    parser.add_argument("--preprocess_task_id", default="TOBE_OVERRIDDEN", help="Task ID of preprocessor")
     parser.add_argument("--test_samples", type=int, default=200)
     parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument("--remote", action="store_true", help="Remote execution flag")
+
     args = parser.parse_args()
 
     # 1. Initialize ClearML
@@ -55,19 +58,37 @@ def main():
         task_name="Model_Evaluation",
         task_type=Task.TaskTypes.testing
     )
-    task.connect(args)
     print('Arguments: {}'.format(args))
-
+    remote = args.remote
+    if remote:
+        task.execute_remotely()
 
     # 2. Retrieve Model & Data Paths from Pipeline Parents
     print(f"🔗 Linking to Training Task")
-    artifact_file_path = args.train_task_id 
+    artifact_file_path = StorageManager.get_local_copy(remote_url=args.train_task_id)
+    print(f"type of artifact_path: {type(artifact_file_path)}")
+    if artifact_file_path == None:
+        artifact_file_path = args.train_task_id
+        print(f"{args.train_task_id} is not a valid url")
 
-    if os.path.exists(artifact_file_path) and os.path.isfile(artifact_file_path):
-        with open(artifact_file_path, 'r') as f:
-            # Read the ID string from the file and strip any whitespace/newlines
-            actual_parent_id = f.read().strip()
-        print(f"✓ Extracted Parent ID from artifact file: {actual_parent_id}")
+    if os.path.exists(str(artifact_file_path)) and os.path.isfile(str(artifact_file_path)):
+        try:
+            with open(artifact_file_path, 'r') as f:
+                # If it's a JSON file, parse it and look for the 'id' key
+                if str(artifact_file_path).endswith('.json'):
+                    data = json.load(f)
+                    # Look for 'id' at root or inside 'preview' based on your JSON structure
+                    actual_parent_id = data.get('id') or data.get('preview', {}).get('id')
+                    print(f"✓ Parsed ID from JSON file: {actual_parent_id}")
+                else:
+                    # If it's just a text file, read the raw string
+                    actual_parent_id = f.read().strip()
+                    print(f"✓ Read ID from text file: {actual_parent_id}")
+        except Exception as e:
+            print(f"  [WARN] Failed to parse file {artifact_file_path}: {e}")
+    else:
+        actual_parent_id = "b0e56b32aa0f424eb112098fabac8238"
+        print(f"⚠️ Directory/File not found. Using hardcoded fallback ID: {actual_parent_id}")
 
     train_task = Task.get_task(task_id=actual_parent_id) # This node have only 1 parent 
 
@@ -82,14 +103,30 @@ def main():
         checkpoint_path = model_artifact.get_local_copy()
 
     # Get Preprocessed Data Path
-    artifact_file_path = args.preprocess_task_id 
+    artifact_file_path = StorageManager.get_local_copy(remote_url=args.preprocess_task_id)
+    print(f"type of artifact_path: {type(artifact_file_path)}")
+    if artifact_file_path == None:
+        artifact_file_path = args.preprocess_task_id
+        print(f"{args.preprocess_task_id} is not a valid url")
 
-    if os.path.exists(artifact_file_path) and os.path.isfile(artifact_file_path):
-        with open(artifact_file_path, 'r') as f:
-            # Read the ID string from the file and strip any whitespace/newlines
-            actual_parent_id = f.read().strip()
-        print(f"✓ Extracted Parent ID from artifact file: {actual_parent_id}")
-
+    if os.path.exists(str(artifact_file_path)) and os.path.isfile(str(artifact_file_path)):
+        try:
+            with open(artifact_file_path, 'r') as f:
+                # If it's a JSON file, parse it and look for the 'id' key
+                if str(artifact_file_path).endswith('.json'):
+                    data = json.load(f)
+                    # Look for 'id' at root or inside 'preview' based on your JSON structure
+                    actual_parent_id = data.get('id') or data.get('preview', {}).get('id')
+                    print(f"✓ Parsed ID from JSON file: {actual_parent_id}")
+                else:
+                    # If it's just a text file, read the raw string
+                    actual_parent_id = f.read().strip()
+                    print(f"✓ Read ID from text file: {actual_parent_id}")
+        except Exception as e:
+            print(f"  [WARN] Failed to parse file {artifact_file_path}: {e}")
+    else:
+        actual_parent_id = "12ce84d486cf4ff494010dc2a7f48e7f"
+        print(f"⚠️ Directory/File not found. Using hardcoded fallback ID: {actual_parent_id}")
     preprocess_task = Task.get_task(task_id=actual_parent_id) 
 
     # Re-using the manifest logic we built

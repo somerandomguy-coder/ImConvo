@@ -26,14 +26,12 @@ from src import (BLANK_IDX, NUM_CHARS, LipReadingCTC, char_indices_to_text,
 # ClearML (optional)
 # ---------------------------------------------------------------------------
 
-os.environ["CLEARML_CONFIG_FILE"] = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "clearml.conf"
-)
 
 USE_CLEARML = False
 task = None
 try:
-    from clearml import Task
+    from clearml import Task, StorageManager
+
 
     task = Task.init(
         project_name="ImConvo",
@@ -57,9 +55,9 @@ except BaseException as e:
 # ---------------------------------------------------------------------------
 
 CONFIG = {
-    "parents_ids" : "8c253646b6f245dfadf520393058a34e", # preprocess task
-    "data_dir": "./data/",
-    "preprocessed_dir": "./data/preprocessed/",
+    "parents_ids" : "TOBE OVERRIDDEN", # preprocess task
+    "data_dir": "TOBE OVERRIDDEN",
+    "preprocessed_dir": "TOBE OVERRIDDEN",
     "batch_size": 48,
     "num_epochs": 1,
     "learning_rate": 3e-4,
@@ -67,12 +65,16 @@ CONFIG = {
     "val_split": 0.2,
     "patience": 7,
     "seed": 42,
+    "remote": True,
 }
 
 if USE_CLEARML and task:
     task.connect(CONFIG)
     print(f"[ClearML] Training Node active. Using data from: {CONFIG['preprocessed_dir']}")
     print('Arguments: {}'.format(CONFIG))
+    remote = CONFIG["remote"]
+    if remote:
+        task.execute_remotely()
 
 # ---------------------------------------------------------------------------
 # ClearML callback
@@ -167,13 +169,30 @@ def main():
     
     if USE_CLEARML and task:
         # Get the pipeline details (if running as part of one)
-        artifact_file_path = CONFIG["parents_ids"] 
+        artifact_file_path = StorageManager.get_local_copy(remote_url=CONFIG["parents_ids"])
+        print(f"type of artifact_path: {type(artifact_file_path)}")
+        if artifact_file_path == None:
+            artifact_file_path = CONFIG["parents_ids"]
+            print(f"{CONFIG["parents_ids"]} is not a valid url")
 
-        if os.path.exists(artifact_file_path) and os.path.isfile(artifact_file_path):
-            with open(artifact_file_path, 'r') as f:
-                # Read the ID string from the file and strip any whitespace/newlines
-                actual_parent_id = f.read().strip()
-            print(f"✓ Extracted Parent ID from artifact file: {actual_parent_id}")
+        if os.path.exists(str(artifact_file_path)) and os.path.isfile(str(artifact_file_path)):
+            try:
+                with open(artifact_file_path, 'r') as f:
+                    # If it's a JSON file, parse it and look for the 'id' key
+                    if str(artifact_file_path).endswith('.json'):
+                        data = json.load(f)
+                        # Look for 'id' at root or inside 'preview' based on your JSON structure
+                        actual_parent_id = data.get('id') or data.get('preview', {}).get('id')
+                        print(f"✓ Parsed ID from JSON file: {actual_parent_id}")
+                    else:
+                        # If it's just a text file, read the raw string
+                        actual_parent_id = f.read().strip()
+                        print(f"✓ Read ID from text file: {actual_parent_id}")
+            except Exception as e:
+                print(f"  [WARN] Failed to parse file {artifact_file_path}: {e}")
+        else:
+            actual_parent_id = "12ce84d486cf4ff494010dc2a7f48e7f" # preprocess task id
+            print(f"⚠️ Directory/File not found. Using hardcoded fallback ID: {actual_parent_id}")
 
         parent_tasks = Task.get_tasks(task_ids=[actual_parent_id]) # This node have only 1 parent 
 
@@ -194,6 +213,34 @@ def main():
                 with open(manifest_local_path, 'r') as f:
                     num_samples = len(f.readlines())
                 print(f"✓ Found {num_samples} valid preprocessed samples.")
+            else:
+                print("[WARN] No manifest artifact found in parent task. Using local fallback.")
+
+
+            dataset_path_artifact = preprocess_task.artifacts.get('dataset_path')
+            
+            if dataset_path_artifact:
+                artifact_data = dataset_path_artifact.get()
+                dataset_local_path = artifact_data.get('path')
+                # This doesn't download the 100GB; it just gets the small .txt file
+                print(f"✓ Found path from parent artifact: {dataset_local_path}")
+                
+                
+                CONFIG["data_dir"] = dataset_local_path
+            else:
+                print("[WARN] No manifest artifact found in parent task. Using local fallback.")
+
+            
+            preprocessed_path_artifact = preprocess_task.artifacts.get('preprocessed_path')
+            
+            if preprocessed_path_artifact:
+
+                artifact_data = preprocessed_path_artifact.get()
+                preprocessed_local_path = artifact_data.get('path')
+                # This doesn't download the 100GB; it just gets the small .txt file
+                print(f"✓ Preprocessed path verified: {preprocessed_local_path}")
+
+                CONFIG["preprocessed_dir"] = preprocessed_local_path
             else:
                 print("[WARN] No manifest artifact found in parent task. Using local fallback.")
 

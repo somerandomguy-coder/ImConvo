@@ -31,7 +31,7 @@ def run_silent_script_pipeline():
 
     pipe.add_step(
         name="download_data",
-        base_task_id="d1f65631031248f2bd7485601e8e0b95",
+        base_task_id="3e57631724414b85ace469403b609a4d",
         post_execute_callback=post_execute_callback_example,
     )
     # 2. STEP 1: Preprocessing (The "Heaviest" node)
@@ -51,37 +51,37 @@ def run_silent_script_pipeline():
         # and clone it with these new parameters
     )
 
-    # # 3. STEP 2: Training (Dependent on Preprocessing)
-    # pipe.add_step(
-    #     name="train_model",
-    #     parents=[
-    #         "preprocess_data",
-    #     ],
-    #     base_task_id="95ebd286b4ba4a1ea26c9dbb8bad2628",
-    #     parameter_override={
-    #         "General/parents_ids": "${preprocess_data.artifacts.parent}",  
-    #     },
-    #     pre_execute_callback=pre_execute_callback_example,
-    #     post_execute_callback=post_execute_callback_example,
-    # )
+    # 3. STEP 2: Training (Dependent on Preprocessing)
+    pipe.add_step(
+        name="train_model",
+        parents=[
+            "preprocess_data",
+        ],
+        base_task_id="b0e56b32aa0f424eb112098fabac8238",
+        parameter_override={
+            "General/parents_ids": "${preprocess_data.artifacts.taskID.url}",  
+        },
+        pre_execute_callback=pre_execute_callback_example,
+        post_execute_callback=post_execute_callback_example,
+    )
 
-    # # 4. STEP 3: Evaluation (The "Gatekeeper")
-    # # This triggers test.py
-    # pipe.add_step(
-    #     name="evaluate_model",
-    #     parents=["train_model"],
-    #     base_task_id="0e6ad08bb596484d8480a401aaf7ecd0",
-    #     parameter_override={
-    #         "Args/train_task_id":  "${train_model.artifacts.parent}",
-    #         "Args/preprocess_task_id": "${preprocess_data.artifacts.parent}",
-    #     },
-    #     pre_execute_callback=pre_execute_callback_example,
-    #     post_execute_callback=post_execute_callback_example,
-    # )
+    # 4. STEP 3: Evaluation (The "Gatekeeper")
+    # This triggers test.py
+    pipe.add_step(
+        name="evaluate_model",
+        parents=["train_model"],
+        base_task_id="70327dd8bae54f16884aad603aabbf32",
+        parameter_override={
+            "Args/train_task_id":  "${train_model.artifacts.taskID.url}",
+            "Args/preprocess_task_id": "${preprocess_data.artifacts.taskID.url}",
+        },
+        pre_execute_callback=pre_execute_callback_example,
+        post_execute_callback=post_execute_callback_example,
+    )
 
     # 5. Execute on the Queue (Your "Real Worker" PC will pick this up)
-    # pipe.start(queue="default")
-    pipe.start_locally(run_pipeline_steps_locally=False)
+    pipe.start(queue="default")
+    # pipe.start_locally(run_pipeline_steps_locally=False)
 
 
 if __name__ == "__main__":

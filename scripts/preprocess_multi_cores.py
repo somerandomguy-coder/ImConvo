@@ -86,7 +86,7 @@ def main():
     parser = argparse.ArgumentParser(description="Multi-core GRID Preprocessing")
     # We define defaults, but ClearML will override these if changed in the UI
     parser.add_argument("--parent", default="TOBE_OVERRIDDEN", help="Input download task id")
-    parser.add_argument("--output_dir", default="./data/preprocessed/", help="NPY output folder")
+    parser.add_argument("--output_dir", default="TOBE_OVERRIDDEN", help="NPY output folder") #default="./data/preprocessed/"
     parser.add_argument("--force", action="store_true", help="Overwrite existing files")
     parser.add_argument("--cores", type=int, default=cpu_count()-1, help="CPU cores")
     parser.add_argument("--remote", action="store_true", help="Overwrite existing files")
@@ -152,7 +152,7 @@ def main():
         except Exception as e:
             print(f"  [WARN] Failed to parse file {artifact_file_path}: {e}")
     else:
-        actual_parent_id = "d1f65631031248f2bd7485601e8e0b95"
+        actual_parent_id = "3e57631724414b85ace469403b609a4d"
         print(f"⚠️ Directory/File not found. Using hardcoded fallback ID: {actual_parent_id}")
 
     
@@ -187,7 +187,14 @@ def main():
         print(f"[ERROR] Could not locate raw data directory!")
         return
         
-
+    base_remote_path = os.path.dirname(raw_data_dir.rstrip('/'))
+    persistent_output_dir = os.path.join(base_remote_path, "preprocessed")
+    
+    # Overwrite the args.output_dir so the rest of your script uses the persistent one
+    args.output_dir = persistent_output_dir
+    
+    print(f"📂 Output directory set to: {args.output_dir}")
+    os.makedirs(args.output_dir, exist_ok=True)
 
 
     # Setup directories
@@ -197,7 +204,6 @@ def main():
 
     # ... [keep your discover_video_samples and Pool logic] ...
     # Replace args.data_dir with raw_data_dir in your logic
-    samples = discover_video_samples(raw_data_dir)
     
     samples = discover_video_samples(raw_data_dir)
     if not samples:
@@ -245,6 +251,10 @@ def main():
     task.upload_artifact("manifest", artifact_object=manifest_path)
     # We do NOT upload the 100GB .npy files to ClearML (saving your free tier!)
     task.upload_artifact("taskID", artifact_object={"id": taskID})
+
+    task.upload_artifact("dataset_path", artifact_object={"path": raw_data_dir})
+    task.upload_artifact("preprocessed_path", artifact_object={"path": persistent_output_dir})
+
 
     
     print(f"\n✓ Preprocessing Complete. Manifest saved.")
