@@ -38,7 +38,7 @@ def run_silent_script_pipeline():
     # This will trigger scripts/preprocess.py
     pipe.add_step(
         name="preprocess_data",
-        base_task_id="12ce84d486cf4ff494010dc2a7f48e7f",
+        base_task_id="cbb81d783fe44a77a6067d9fe5e10d04",
         parents=[
             "download_data",
         ],
@@ -57,7 +57,7 @@ def run_silent_script_pipeline():
         parents=[
             "preprocess_data",
         ],
-        base_task_id="b0e56b32aa0f424eb112098fabac8238",
+        base_task_id="40182a3f5d334460be46ba405c055be6",
         parameter_override={
             "General/parents_ids": "${preprocess_data.artifacts.taskID.url}",  
         },
@@ -80,8 +80,8 @@ def run_silent_script_pipeline():
     )
 
     # 5. Execute on the Queue (Your "Real Worker" PC will pick this up)
-    pipe.start(queue="default")
-    # pipe.start_locally(run_pipeline_steps_locally=False)
+    # pipe.start(queue="default")
+    pipe.start_locally(run_pipeline_steps_locally=False)
 
 
 if __name__ == "__main__":

@@ -33,6 +33,8 @@ def process_single_sample(sample_info, output_dir, align_output_dir, force):
     output_path = os.path.join(output_dir, f"{unique_name}.npy")
     align_dst = os.path.join(align_output_dir, f"{unique_name}.align")
 
+    
+
     # 1. Skip if already exists (unless --force)
     if os.path.exists(output_path) and not force:
         # Ensure the alignment file is also there
@@ -186,8 +188,9 @@ def main():
     if not raw_data_dir or not os.path.exists(raw_data_dir):
         print(f"[ERROR] Could not locate raw data directory!")
         return
+    raw_data_str = str(raw_data_dir)
         
-    base_remote_path = os.path.dirname(raw_data_dir.rstrip('/'))
+    base_remote_path = os.path.dirname(raw_data_str.rstrip('/'))
     persistent_output_dir = os.path.join(base_remote_path, "preprocessed")
     
     # Overwrite the args.output_dir so the rest of your script uses the persistent one
