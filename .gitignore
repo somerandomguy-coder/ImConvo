@@ -210,3 +210,8 @@ __marimo__/
 
 # ClearML
 clearml.conf
+Lipreading_using_Temporal_Convolutional_Networks/legacy_LRW_landmarks.zip:Zone.Identifier
+
+Lipreading_using_Temporal_Convolutional_Networks/LRW_landmarks.zip:Zone.Identifier
+Lipreading_using_Temporal_Convolutional_Networks/landmarks/
+.codex
