@@ -136,7 +136,7 @@ class CheckpointSaver:
         self.best_for_stage = ckpt_dict.get('best_prec_per_stage',None)
 
 
-def load_model(load_path, model, optimizer = None, allow_size_mismatch = False):
+def load_model(load_path, model, optimizer = None, allow_size_mismatch = False, map_location=None):
     """
     Load model from file
     If optimizer is passed, then the loaded dictionary is expected to contain also the states of the optimizer.
@@ -145,7 +145,7 @@ def load_model(load_path, model, optimizer = None, allow_size_mismatch = False):
 
     # -- load dictionary
     assert os.path.isfile( load_path ), "Error when loading the model, provided path not found: {}".format( load_path )
-    checkpoint = torch.load(load_path)
+    checkpoint = torch.load(load_path, map_location=map_location)
     loaded_state_dict = checkpoint['model_state_dict']
 
     if allow_size_mismatch:

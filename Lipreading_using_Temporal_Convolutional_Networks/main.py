@@ -84,6 +84,8 @@ def load_args(default_config=None):
     parser.add_argument('--logging-dir', type=str, default='./train_logs', help = 'path to the directory in which to save the log file')
     # use boundaries
     parser.add_argument('--use-boundary', default=False, action='store_true', help='include hard border at the testing stage.')
+    parser.add_argument('--device', default='auto', choices=['auto', 'cuda', 'cpu'],
+                        help='execution device: auto selects cuda when available, otherwise cpu')
 
     args = parser.parse_args()
     return args
@@ -94,22 +96,34 @@ args = load_args()
 torch.manual_seed(1)
 np.random.seed(1)
 random.seed(1)
-torch.backends.cudnn.benchmark = True
 
 
-def extract_feats(model):
+def resolve_device(device_name):
+    if device_name == 'auto':
+        return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if device_name == 'cuda':
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA was requested but no CUDA device is available.")
+        return torch.device('cuda')
+    return torch.device('cpu')
+
+
+def extract_feats(model, device):
     """
     :rtype: FloatTensor
     """
     model.eval()
-    preprocessing_func = get_preprocessing_pipelines()['test']
+    preprocessing_func = get_preprocessing_pipelines(args.modality)['test']
     data = preprocessing_func(np.load(args.mouth_patch_path)['data'])  # data: TxHxW
-    return model(torch.FloatTensor(data)[None, None, :, :, :].cuda(), lengths=[data.shape[0]])
+    with torch.no_grad():
+        input_tensor = torch.FloatTensor(data)[None, None, :, :, :].to(device)
+        return model(input_tensor, lengths=[data.shape[0]])
 
 
-def evaluate(model, dset_loader, criterion):
+def evaluate(model, dset_loader, criterion, device):
 
     model.eval()
+    use_cuda = device.type == 'cuda'
 
     running_loss = 0.
     running_corrects = 0.
@@ -118,24 +132,27 @@ def evaluate(model, dset_loader, criterion):
         for batch_idx, data in enumerate(tqdm(dset_loader)):
             if args.use_boundary:
                 input, lengths, labels, boundaries = data
-                boundaries = boundaries.cuda()
+                boundaries = boundaries.to(device, non_blocking=use_cuda)
             else:
                 input, lengths, labels = data
                 boundaries = None
-            logits = model(input.unsqueeze(1).cuda(), lengths=lengths, boundaries=boundaries)
+            input = input.to(device, non_blocking=use_cuda)
+            labels = labels.to(device, non_blocking=use_cuda)
+            logits = model(input.unsqueeze(1), lengths=lengths, boundaries=boundaries)
             _, preds = torch.max(F.softmax(logits, dim=1).data, dim=1)
-            running_corrects += preds.eq(labels.cuda().view_as(preds)).sum().item()
+            running_corrects += preds.eq(labels.view_as(preds)).sum().item()
 
-            loss = criterion(logits, labels.cuda())
+            loss = criterion(logits, labels)
             running_loss += loss.item() * input.size(0)
 
     print(f"{len(dset_loader.dataset)} in total\tCR: {running_corrects/len(dset_loader.dataset)}")
     return running_corrects/len(dset_loader.dataset), running_loss/len(dset_loader.dataset)
 
 
-def train(model, dset_loader, criterion, epoch, optimizer, logger):
+def train(model, dset_loader, criterion, epoch, optimizer, logger, device):
     data_time = AverageMeter()
     batch_time = AverageMeter()
+    use_cuda = device.type == 'cuda'
 
     lr = showLR(optimizer)
 
@@ -152,7 +169,7 @@ def train(model, dset_loader, criterion, epoch, optimizer, logger):
     for batch_idx, data in enumerate(dset_loader):
         if args.use_boundary:
             input, lengths, labels, boundaries = data
-            boundaries = boundaries.cuda()
+            boundaries = boundaries.to(device, non_blocking=use_cuda)
         else:
             input, lengths, labels = data
             boundaries = None
@@ -161,11 +178,13 @@ def train(model, dset_loader, criterion, epoch, optimizer, logger):
 
         # --
         input, labels_a, labels_b, lam = mixup_data(input, labels, args.alpha)
-        labels_a, labels_b = labels_a.cuda(), labels_b.cuda()
+        input = input.to(device, non_blocking=use_cuda)
+        labels_a = labels_a.to(device, non_blocking=use_cuda)
+        labels_b = labels_b.to(device, non_blocking=use_cuda)
 
         optimizer.zero_grad()
 
-        logits = model(input.unsqueeze(1).cuda(), lengths=lengths, boundaries=boundaries)
+        logits = model(input.unsqueeze(1), lengths=lengths, boundaries=boundaries)
 
         loss_func = mixup_criterion(labels_a, labels_b, lam)
         loss = loss_func(criterion, logits)
@@ -188,7 +207,7 @@ def train(model, dset_loader, criterion, epoch, optimizer, logger):
     return model
 
 
-def get_model_from_json():
+def get_model_from_json(device):
     assert args.config_path.endswith('.json') and os.path.isfile(args.config_path), \
         f"'.json' config path does not exist. Path input: {args.config_path}"
     args_loaded = load_json( args.config_path)
@@ -226,12 +245,15 @@ def get_model_from_json():
                         relu_type=args.relu_type,
                         width_mult=args.width_mult,
                         use_boundary=args.use_boundary,
-                        extract_feats=args.extract_feats).cuda()
+                        extract_feats=args.extract_feats).to(device)
     calculateNorm2(model)
     return model
 
 
 def main():
+    device = resolve_device(args.device)
+    torch.backends.cudnn.benchmark = device.type == 'cuda'
+    print(f"Using device: {device}")
 
     # -- logging
     save_path = get_save_folder( args)
@@ -240,11 +262,7 @@ def main():
     ckpt_saver = CheckpointSaver(save_path)
 
     # -- get model
-    model = get_model_from_json()
-    # -- get dataset iterators
-    dset_loaders = get_data_loaders(args)
-    # -- get loss function
-    criterion = nn.CrossEntropyLoss()
+    model = get_model_from_json(device)
     # -- get optimizer
     optimizer = get_optimizer(args, optim_policies=model.parameters())
     # -- get learning rate scheduler
@@ -255,23 +273,36 @@ def main():
             f"Model path does not exist. Path input: {args.model_path}"
         # resume from checkpoint
         if args.init_epoch > 0:
-            model, optimizer, epoch_idx, ckpt_dict = load_model(args.model_path, model, optimizer)
+            model, optimizer, epoch_idx, ckpt_dict = load_model(
+                args.model_path, model, optimizer, map_location=device
+            )
             args.init_epoch = epoch_idx
             ckpt_saver.set_best_from_ckpt(ckpt_dict)
             logger.info(f'Model and states have been successfully loaded from {args.model_path}')
         # init from trained model
         else:
-            model = load_model(args.model_path, model, allow_size_mismatch=args.allow_size_mismatch)
+            model = load_model(
+                args.model_path,
+                model,
+                allow_size_mismatch=args.allow_size_mismatch,
+                map_location=device,
+            )
             logger.info(f'Model has been successfully loaded from {args.model_path}')
         # feature extraction
         if args.mouth_patch_path:
-            save2npz( args.mouth_embedding_out_path, data = extract_feats(model).cpu().detach().numpy())
+            save2npz(args.mouth_embedding_out_path, data=extract_feats(model, device).cpu().detach().numpy())
             return
-        # if test-time, performance on test partition and exit. Otherwise, performance on validation and continue (sanity check for reload)
-        if args.test:
-            acc_avg_test, loss_avg_test = evaluate(model, dset_loaders['test'], criterion)
-            logger.info(f"Test-time performance on partition {'test'}: Loss: {loss_avg_test:.4f}\tAcc:{acc_avg_test:.4f}")
-            return
+
+    # -- get dataset iterators
+    dset_loaders = get_data_loaders(args)
+    # -- get loss function
+    criterion = nn.CrossEntropyLoss()
+
+    # if test-time, performance on test partition and exit. Otherwise, performance on validation and continue (sanity check for reload)
+    if args.test:
+        acc_avg_test, loss_avg_test = evaluate(model, dset_loaders['test'], criterion, device)
+        logger.info(f"Test-time performance on partition {'test'}: Loss: {loss_avg_test:.4f}\tAcc:{acc_avg_test:.4f}")
+        return
 
     # -- fix learning rate after loading the ckeckpoint (latency)
     if args.model_path and args.init_epoch > 0:
@@ -280,8 +311,8 @@ def main():
     epoch = args.init_epoch
 
     while epoch < args.epochs:
-        model = train(model, dset_loaders['train'], criterion, epoch, optimizer, logger)
-        acc_avg_val, loss_avg_val = evaluate(model, dset_loaders['val'], criterion)
+        model = train(model, dset_loaders['train'], criterion, epoch, optimizer, logger, device)
+        acc_avg_val, loss_avg_val = evaluate(model, dset_loaders['val'], criterion, device)
         logger.info(f"{'val'} Epoch:\t{epoch:2}\tLoss val: {loss_avg_val:.4f}\tAcc val:{acc_avg_val:.4f}, LR: {showLR(optimizer)}")
         # -- save checkpoint
         save_dict = {
@@ -295,8 +326,8 @@ def main():
 
     # -- evaluate best-performing epoch on test partition
     best_fp = os.path.join(ckpt_saver.save_dir, ckpt_saver.best_fn)
-    _ = load_model(best_fp, model)
-    acc_avg_test, loss_avg_test = evaluate(model, dset_loaders['test'], criterion)
+    _ = load_model(best_fp, model, map_location=device)
+    acc_avg_test, loss_avg_test = evaluate(model, dset_loaders['test'], criterion, device)
     logger.info(f"Test time performance of best epoch: {acc_avg_test} (loss: {loss_avg_test})")
 
 if __name__ == '__main__':

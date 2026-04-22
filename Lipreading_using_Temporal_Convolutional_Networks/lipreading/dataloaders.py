@@ -41,6 +41,7 @@ def get_preprocessing_pipelines(modality):
 
 def get_data_loaders(args):
     preprocessing = get_preprocessing_pipelines( args.modality)
+    use_cuda = torch.cuda.is_available()
 
     # create dataset object for each partition
     partitions = ['test'] if args.test else ['train', 'val', 'test']
@@ -59,7 +60,7 @@ def get_data_loaders(args):
                         batch_size=args.batch_size,
                         shuffle=True,
                         collate_fn=pad_packed_collate,
-                        pin_memory=True,
+                        pin_memory=use_cuda,
                         num_workers=args.workers,
                         worker_init_fn=np.random.seed(1)) for x in partitions}
     return dset_loaders

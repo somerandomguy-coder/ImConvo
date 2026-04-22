@@ -214,4 +214,6 @@ Lipreading_using_Temporal_Convolutional_Networks/legacy_LRW_landmarks.zip:Zone.I
 
 Lipreading_using_Temporal_Convolutional_Networks/LRW_landmarks.zip:Zone.Identifier
 Lipreading_using_Temporal_Convolutional_Networks/landmarks/
+Lipreading_using_Temporal_Convolutional_Networks/datasets/visual_data_grid51/
+train_logs/
 .codex
