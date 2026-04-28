@@ -137,7 +137,7 @@ def main():
     )
     parser.add_argument("--force", action="store_true", help="Overwrite existing files")
     parser.add_argument(
-        "--cores", type=int, default=6, help="Number of CPU cores"
+        "--cores", type=int, default=11, help="Number of CPU cores"
     )
     args = parser.parse_args()
 

@@ -217,3 +217,10 @@ Lipreading_using_Temporal_Convolutional_Networks/landmarks/
 Lipreading_using_Temporal_Convolutional_Networks/datasets/visual_data_grid51/
 train_logs/
 .codex
+learning_rate.json
+
+*.tar.gz
+*.keras
+
+temp_reports/
+loss.json
