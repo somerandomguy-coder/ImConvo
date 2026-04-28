@@ -210,3 +210,14 @@ __marimo__/
 
 # ClearML
 clearml.conf
+
+Lipreading_using_Temporal_Convolutional_Networks/
+
+.codex
+
+*.keras
+*.tar.gz
+learning_rate.json
+loss.json
+train_logs/
+temp_reports/
