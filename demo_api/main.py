@@ -35,10 +35,20 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from src import NUM_CHARS, LipReadingCTC, char_indices_to_text, extract_lip_frames, parse_alignment_text
+from src import (
+    BLANK_IDX,
+    CHAR_LIST,
+    NUM_CHARS,
+    SPACE_IDX,
+    LipReadingCTC,
+    char_indices_to_text,
+    extract_lip_frames,
+    parse_alignment_text,
+)
 
 DEFAULT_MODEL_PATH = ROOT_DIR / "checkpoints" / "best_ctc_model.keras"
 PREVIEW_DIR = ROOT_DIR / "demo_api" / "preview_cache"
+EXAMPLE_DIR = ROOT_DIR / "data" / "s3_processed"
 LOCAL_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -163,6 +173,23 @@ def _resolve_reference_text(file_name: str, expected_text: str | None) -> tuple[
         return parse_alignment_text(unique_candidates[0]).lower(), "align_auto"
     except Exception:
         return None, "none"
+
+
+def _resolve_example_path(example_name: str) -> Path:
+    if not example_name or not example_name.strip():
+        raise HTTPException(status_code=400, detail="Missing example_name.")
+
+    safe_name = Path(example_name).name
+    candidate = (EXAMPLE_DIR / safe_name).resolve()
+    try:
+        candidate.relative_to(EXAMPLE_DIR.resolve())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid example path.") from exc
+
+    if not candidate.exists() or not candidate.is_file():
+        raise HTTPException(status_code=404, detail=f"Example not found: {safe_name}")
+
+    return candidate
 
 
 def _get_video_metadata(video_path: str) -> dict[str, Any]:
@@ -319,6 +346,100 @@ def get_device_specs() -> dict[str, Any]:
     }
 
 
+def _token_from_index(idx: int) -> str:
+    if idx == BLANK_IDX:
+        return "<blank>"
+    if idx == SPACE_IDX:
+        return "<space>"
+    if 0 <= idx < len(CHAR_LIST):
+        return CHAR_LIST[idx]
+    return f"<unk:{idx}>"
+
+
+def _run_inference_from_video_path(
+    video_path: str,
+    file_name: str,
+    content_size_bytes: int,
+    model_path: str | None,
+    expected_text: str | None,
+) -> dict[str, Any]:
+    total_start = time.perf_counter()
+
+    normalized_model_path = _normalize_model_path(model_path)
+    try:
+        model = _get_or_load_model(normalized_model_path)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to load model: {exc}") from exc
+
+    video_meta = _get_video_metadata(video_path)
+    if video_meta["frame_count"] is None or video_meta["width"] is None:
+        raise HTTPException(status_code=400, detail="Uploaded file is not a readable video stream.")
+
+    preview_path = _build_preview_file(video_path, file_name)
+
+    preprocess_start = time.perf_counter()
+    frames = extract_lip_frames(video_path)
+    preprocess_ms = (time.perf_counter() - preprocess_start) * 1000
+
+    if frames is None:
+        raise HTTPException(status_code=400, detail="Could not detect mouth/face region from uploaded video.")
+    if not isinstance(frames, np.ndarray) or frames.ndim != 3:
+        raise HTTPException(status_code=400, detail="Invalid preprocessed frame tensor.")
+
+    input_tensor = np.expand_dims(frames, axis=(0, -1)).astype(np.float32)
+
+    inference_start = time.perf_counter()
+    logits = model(input_tensor, training=False)
+    decoded = model.decode_greedy(logits)
+    inference_ms = (time.perf_counter() - inference_start) * 1000
+
+    raw_timestep_indices = np.argmax(logits.numpy()[0], axis=-1).astype(int).tolist()
+    raw_timestep_tokens = [_token_from_index(i) for i in raw_timestep_indices]
+
+    pred_indices = decoded[0]
+    pred_indices = pred_indices[pred_indices >= 0]
+    predicted_text = char_indices_to_text(pred_indices.tolist()).lower()
+
+    reference_text, reference_source = _resolve_reference_text(file_name, expected_text)
+    wer = compute_wer(reference_text, predicted_text) if reference_text is not None else None
+    cer = compute_cer(reference_text, predicted_text) if reference_text is not None else None
+
+    total_ms = (time.perf_counter() - total_start) * 1000
+
+    return {
+        "predicted_text": predicted_text,
+        "reference_text": reference_text,
+        "reference_source": reference_source,
+        "wer": wer,
+        "cer": cer,
+        "model_path_used": normalized_model_path,
+        "latency_ms": {
+            "preprocess": round(preprocess_ms, 2),
+            "inference": round(inference_ms, 2),
+            "total": round(total_ms, 2),
+        },
+        "video_stats": {
+            "filename": file_name,
+            "size_bytes": content_size_bytes,
+            "width": video_meta["width"],
+            "height": video_meta["height"],
+            "fps": video_meta["fps"],
+            "frame_count": video_meta["frame_count"],
+            "duration_sec": video_meta["duration_sec"],
+            "processed_shape": list(frames.shape),
+        },
+        "preview_url": preview_path,
+        "debug": {
+            "raw_timestep_indices": raw_timestep_indices,
+            "raw_timestep_tokens": raw_timestep_tokens,
+            "raw_timestep_text": " ".join(raw_timestep_tokens),
+        },
+        "device_specs": get_device_specs(),
+    }
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     model_path = str(DEFAULT_MODEL_PATH.resolve())
@@ -332,23 +453,38 @@ def health() -> dict[str, Any]:
     }
 
 
+@app.get("/examples")
+def list_examples(limit: int = 100) -> dict[str, Any]:
+    if limit <= 0:
+        limit = 1
+    if limit > 1000:
+        limit = 1000
+
+    if not EXAMPLE_DIR.exists():
+        return {"base_dir": str(EXAMPLE_DIR), "count": 0, "examples": []}
+
+    files = sorted(
+        [
+            p.name
+            for p in EXAMPLE_DIR.iterdir()
+            if p.is_file() and p.suffix.lower() in {".mpg", ".mpeg", ".mp4", ".avi", ".mov", ".webm"}
+        ]
+    )
+    selected = files[:limit]
+    return {
+        "base_dir": str(EXAMPLE_DIR),
+        "count": len(selected),
+        "examples": selected,
+    }
+
+
 @app.post("/analyze")
 async def analyze(
     file: UploadFile = File(...),
     model_path: str | None = Form(default=None),
     expected_text: str | None = Form(default=None),
 ) -> dict[str, Any]:
-    total_start = time.perf_counter()
     suffix = Path(file.filename or "upload.bin").suffix or ".bin"
-
-    normalized_model_path = _normalize_model_path(model_path)
-
-    try:
-        model = _get_or_load_model(normalized_model_path)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to load model: {exc}") from exc
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         temp_path = tmp.name
@@ -356,74 +492,34 @@ async def analyze(
         tmp.write(content)
 
     try:
-        video_meta = _get_video_metadata(temp_path)
-        if video_meta["frame_count"] is None or video_meta["width"] is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Uploaded file is not a readable video stream.",
-            )
-        preview_path = _build_preview_file(temp_path, file.filename)
-
-        preprocess_start = time.perf_counter()
-        frames = extract_lip_frames(temp_path)
-        preprocess_ms = (time.perf_counter() - preprocess_start) * 1000
-
-        if frames is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Could not detect mouth/face region from uploaded video.",
-            )
-
-        if not isinstance(frames, np.ndarray) or frames.ndim != 3:
-            raise HTTPException(status_code=400, detail="Invalid preprocessed frame tensor.")
-
-        input_tensor = np.expand_dims(frames, axis=(0, -1)).astype(np.float32)
-
-        inference_start = time.perf_counter()
-        logits = model(input_tensor, training=False)
-        decoded = model.decode_greedy(logits)
-        inference_ms = (time.perf_counter() - inference_start) * 1000
-
-        pred_indices = decoded[0]
-        pred_indices = pred_indices[pred_indices >= 0]
-        predicted_text = char_indices_to_text(pred_indices.tolist()).lower()
-
-        reference_text, reference_source = _resolve_reference_text(file.filename or "", expected_text)
-        wer = compute_wer(reference_text, predicted_text) if reference_text is not None else None
-        cer = compute_cer(reference_text, predicted_text) if reference_text is not None else None
-
-        total_ms = (time.perf_counter() - total_start) * 1000
-
-        return {
-            "predicted_text": predicted_text,
-            "reference_text": reference_text,
-            "reference_source": reference_source,
-            "wer": wer,
-            "cer": cer,
-            "model_path_used": normalized_model_path,
-            "latency_ms": {
-                "preprocess": round(preprocess_ms, 2),
-                "inference": round(inference_ms, 2),
-                "total": round(total_ms, 2),
-            },
-            "video_stats": {
-                "filename": file.filename,
-                "size_bytes": len(content),
-                "width": video_meta["width"],
-                "height": video_meta["height"],
-                "fps": video_meta["fps"],
-                "frame_count": video_meta["frame_count"],
-                "duration_sec": video_meta["duration_sec"],
-                "processed_shape": list(frames.shape),
-            },
-            "preview_url": preview_path,
-            "device_specs": get_device_specs(),
-        }
+        return _run_inference_from_video_path(
+            video_path=temp_path,
+            file_name=file.filename or "upload.bin",
+            content_size_bytes=len(content),
+            model_path=model_path,
+            expected_text=expected_text,
+        )
     finally:
         try:
             os.remove(temp_path)
         except OSError:
             pass
+
+
+@app.post("/analyze-example")
+def analyze_example(
+    example_name: str = Form(...),
+    model_path: str | None = Form(default=None),
+    expected_text: str | None = Form(default=None),
+) -> dict[str, Any]:
+    example_path = _resolve_example_path(example_name)
+    return _run_inference_from_video_path(
+        video_path=str(example_path),
+        file_name=example_path.name,
+        content_size_bytes=example_path.stat().st_size,
+        model_path=model_path,
+        expected_text=expected_text,
+    )
 
 
 def _parse_args() -> argparse.Namespace:

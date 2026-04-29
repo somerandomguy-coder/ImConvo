@@ -108,6 +108,18 @@ export default function DemoResultPanel({
         </p>
       </section>
 
+      <section className="rounded-md border border-border p-3">
+        <p className="mb-2 text-xs uppercase tracking-wide text-muted">
+          Raw CTC Timestep Output (Debug)
+        </p>
+        <p className="text-xs text-muted">
+          Repeats and blanks are intentionally preserved.
+        </p>
+        <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-black/30 p-3 text-xs leading-relaxed text-foreground">
+          {result.debug.raw_timestep_text}
+        </pre>
+      </section>
+
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <div className="rounded-md border border-border p-3">
           <p className="text-xs uppercase tracking-wide text-muted">WER</p>

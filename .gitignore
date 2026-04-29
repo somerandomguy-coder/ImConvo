@@ -221,3 +221,5 @@ learning_rate.json
 loss.json
 train_logs/
 temp_reports/
+
+preview_cache/

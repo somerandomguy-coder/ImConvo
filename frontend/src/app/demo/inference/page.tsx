@@ -3,7 +3,14 @@
 import { useEffect, useState } from "react";
 import DemoResultPanel from "@/components/demo/DemoResultPanel";
 import DemoVideoUploader from "@/components/demo/DemoVideoUploader";
-import { analyzeDemoVideo, checkDemoHealth, type AnalyzeResponse, type HealthStatus } from "@/utils/demoApi";
+import {
+  analyzeDemoExample,
+  analyzeDemoVideo,
+  checkDemoHealth,
+  listDemoExamples,
+  type AnalyzeResponse,
+  type HealthStatus,
+} from "@/utils/demoApi";
 
 const DEFAULT_MODEL_PATH = "checkpoints/best_ctc_model.keras";
 
@@ -15,6 +22,8 @@ export default function DemoInferencePage() {
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [examples, setExamples] = useState<string[]>([]);
+  const [selectedExample, setSelectedExample] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -28,6 +37,17 @@ export default function DemoInferencePage() {
         const message =
           err instanceof Error ? err.message : "Failed to connect to inference API.";
         setError(message);
+      });
+    listDemoExamples(120)
+      .then((data) => {
+        if (!mounted) return;
+        setExamples(data.examples);
+        if (data.examples.length > 0) {
+          setSelectedExample(data.examples[0]);
+        }
+      })
+      .catch(() => {
+        // Keep upload flow usable even if examples endpoint fails.
       });
     return () => {
       mounted = false;
@@ -63,6 +83,36 @@ export default function DemoInferencePage() {
     }
   };
 
+  const runExampleInference = async () => {
+    if (!selectedExample) return;
+    setError(null);
+    setResult(null);
+    setIsLoading(true);
+    setFile(null);
+
+    try {
+      const analyzed = await analyzeDemoExample({
+        exampleName: selectedExample,
+        modelPath,
+        expectedText,
+      });
+      setResult(analyzed);
+    } catch (err: unknown) {
+      const message =
+        (typeof err === "object" &&
+          err &&
+          "response" in err &&
+          typeof (err as { response?: { data?: { detail?: string } } }).response
+            ?.data?.detail === "string" &&
+          (err as { response?: { data?: { detail?: string } } }).response?.data
+            ?.detail) ||
+        (err instanceof Error ? err.message : "Example inference request failed.");
+      setError(message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const reset = () => {
     setFile(null);
     setExpectedText("");
@@ -88,7 +138,7 @@ export default function DemoInferencePage() {
         </section>
 
         <section className="rounded-xl border border-border bg-card p-5">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-3">
             <label className="space-y-1">
               <span className="text-sm font-medium text-foreground">
                 Model path
@@ -112,6 +162,26 @@ export default function DemoInferencePage() {
                 placeholder="Type expected sentence for WER/CER"
               />
             </label>
+
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-foreground">
+                Server example (s3_processed)
+              </span>
+              <select
+                value={selectedExample}
+                onChange={(e) => setSelectedExample(e.target.value)}
+                className="w-full rounded-md border border-border bg-black/20 px-3 py-2 text-sm text-foreground outline-none ring-accent/40 focus:ring-2"
+              >
+                {examples.length === 0 && (
+                  <option value="">No examples available</option>
+                )}
+                {examples.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
         </section>
 
@@ -125,6 +195,14 @@ export default function DemoInferencePage() {
             className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isLoading ? "Analyzing..." : "Analyze Video"}
+          </button>
+          <button
+            type="button"
+            disabled={!selectedExample || isLoading}
+            onClick={runExampleInference}
+            className="rounded-lg bg-card px-5 py-2.5 text-sm font-medium text-foreground ring-1 ring-border transition-colors hover:bg-card-hover disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isLoading ? "Analyzing..." : "Run Server Example"}
           </button>
           <button
             type="button"

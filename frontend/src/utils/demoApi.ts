@@ -22,6 +22,12 @@ export interface AnalyzeRequest {
   expectedText?: string;
 }
 
+export interface AnalyzeExampleRequest {
+  exampleName: string;
+  modelPath?: string;
+  expectedText?: string;
+}
+
 export interface AnalyzeResponse {
   predicted_text: string;
   reference_text: string | null;
@@ -45,6 +51,11 @@ export interface AnalyzeResponse {
     processed_shape: number[];
   };
   preview_url: string | null;
+  debug: {
+    raw_timestep_indices: number[];
+    raw_timestep_tokens: string[];
+    raw_timestep_text: string;
+  };
   device_specs: {
     cpu_model: string | null;
     cpu_physical_cores: number | null;
@@ -78,6 +89,43 @@ export async function analyzeDemoVideo(
   const { data } = await demoApi.post<AnalyzeResponse>("/analyze", formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
+  return data;
+}
+
+export interface ExampleListResponse {
+  base_dir: string;
+  count: number;
+  examples: string[];
+}
+
+export async function listDemoExamples(
+  limit: number = 100,
+): Promise<ExampleListResponse> {
+  const { data } = await demoApi.get<ExampleListResponse>("/examples", {
+    params: { limit },
+  });
+  return data;
+}
+
+export async function analyzeDemoExample(
+  payload: AnalyzeExampleRequest,
+): Promise<AnalyzeResponse> {
+  const formData = new FormData();
+  formData.append("example_name", payload.exampleName);
+  if (payload.modelPath?.trim()) {
+    formData.append("model_path", payload.modelPath.trim());
+  }
+  if (payload.expectedText?.trim()) {
+    formData.append("expected_text", payload.expectedText.trim());
+  }
+
+  const { data } = await demoApi.post<AnalyzeResponse>(
+    "/analyze-example",
+    formData,
+    {
+      headers: { "Content-Type": "multipart/form-data" },
+    },
+  );
   return data;
 }
 
