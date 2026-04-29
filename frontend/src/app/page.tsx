@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import VideoUploader from "@/components/VideoUploader";
 import ResultDisplay from "@/components/ResultDisplay";
 
@@ -53,6 +54,17 @@ export default function Home() {
             Upload a video — we would predict what&apos;s being said, no
             audio needed.
           </p>
+          <div className="mt-4 rounded-lg border border-accent/40 bg-accent/10 p-3">
+            <p className="text-sm text-foreground">
+              Looking for model selection, WER/CER, latency, and device specs?
+            </p>
+            <Link
+              href="/demo/inference"
+              className="mt-2 inline-block rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-hover"
+            >
+              Open Demo Inference
+            </Link>
+          </div>
         </div>
 
         <VideoUploader

@@ -4,6 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "demo:web": "next dev -p 3100",
+    "demo:inference": "../.venv/bin/python ../demo_api/main.py --host 127.0.0.1 --port 8001",
+    "demo:all": "concurrently -k -n API,WEB -c yellow,cyan \"npm run demo:inference\" \"npm run demo:web\"",
+    "demo:build-ngram-lm": "../.venv/bin/python ../scripts/build_grid_ngram_lm.py",
+    "demo:convert:s1": "../scripts/convert_demo_videos_to_mp4.sh --input ../data/s1_processed --output ../data/demo_mp4/s1_processed",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
@@ -22,6 +27,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
+    "concurrently": "^9.1.2",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
