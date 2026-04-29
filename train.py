@@ -45,11 +45,12 @@ CONFIG = {
     "preprocessed_dir": "./data/preprocessed/",
     "split_dir": "./splits/grid_v1",
     "batch_size": 48,
-    "num_epochs": 1,
+    "num_epochs": 100,
     "learning_rate": 3e-4,
     "weight_decay": 1e-4,
     "patience": 7,
     "seed": 42,
+    "resume_from_best_checkpoint": True,
 }
 
 # ---------------------------------------------------------------------------
@@ -228,6 +229,28 @@ def main():
 
     print(f"\nModel parameters: {count_parameters(model):,}")
 
+    checkpoint_dir = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "checkpoints"
+    )
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    best_checkpoint_path = os.path.join(checkpoint_dir, "best_ctc_model.keras")
+
+    # ---- Optional resume from previous best checkpoint ----
+    if CONFIG["resume_from_best_checkpoint"] and os.path.exists(best_checkpoint_path):
+        try:
+            model.load_weights(best_checkpoint_path)
+            print(f"[Checkpoint] Resumed weights from: {best_checkpoint_path}")
+        except BaseException as e:
+            print(
+                f"[Checkpoint] Failed to resume from {best_checkpoint_path} "
+                f"({type(e).__name__}: {e}). Training from current initialization."
+            )
+    elif CONFIG["resume_from_best_checkpoint"]:
+        print(
+            f"[Checkpoint] No previous checkpoint found at {best_checkpoint_path}. "
+            "Training from scratch."
+        )
+
     # ---- Compile (loss handled in train_step) ----
     optimizer = tf.keras.optimizers.AdamW(
         learning_rate=CONFIG["learning_rate"],
@@ -236,9 +259,6 @@ def main():
     model.compile(optimizer=optimizer)
 
     # ---- Callbacks ----
-    checkpoint_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "checkpoints")
-    os.makedirs(checkpoint_dir, exist_ok=True)
-
     callbacks = [
         tf.keras.callbacks.ReduceLROnPlateau(
             monitor="val_loss", factor=0.5, patience=3, min_lr=1e-6, verbose=1
@@ -248,7 +268,7 @@ def main():
             restore_best_weights=True, verbose=1
         ),
         tf.keras.callbacks.ModelCheckpoint(
-            filepath=os.path.join(checkpoint_dir, "best_ctc_model.keras"),
+            filepath=best_checkpoint_path,
             monitor="val_loss", save_best_only=True, verbose=1,
         ),
     ]
