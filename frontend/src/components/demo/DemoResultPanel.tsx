@@ -21,6 +21,11 @@ function displayPercent(value: number | null) {
   return `${(value * 100).toFixed(2)}%`;
 }
 
+function displayScore(value: number | null) {
+  if (value === null || Number.isNaN(value)) return "N/A";
+  return value.toFixed(4);
+}
+
 export default function DemoResultPanel({
   isLoading,
   error,
@@ -110,6 +115,24 @@ export default function DemoResultPanel({
 
       <section className="rounded-md border border-border p-3">
         <p className="mb-2 text-xs uppercase tracking-wide text-muted">
+          Decoder Summary
+        </p>
+        <div className="grid gap-1 text-sm text-foreground">
+          <p>Mode: {result.decoder.label}</p>
+          <p>Code: {result.decoder.mode}</p>
+          <p>Beam width: {result.decoder.beam_width}</p>
+          <p>Collapsed text: {result.debug.collapsed_text || "N/A"}</p>
+          {result.decoder.metadata.lm_type && (
+            <p>LM type: {result.decoder.metadata.lm_type}</p>
+          )}
+          {result.decoder.metadata.ngram_alpha !== undefined && (
+            <p>LM weight: {displayScore(result.decoder.metadata.ngram_alpha)}</p>
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-md border border-border p-3">
+        <p className="mb-2 text-xs uppercase tracking-wide text-muted">
           Raw CTC Timestep Output (Debug)
         </p>
         <p className="text-xs text-muted">
@@ -118,6 +141,34 @@ export default function DemoResultPanel({
         <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-black/30 p-3 text-xs leading-relaxed text-foreground">
           {result.debug.raw_timestep_text}
         </pre>
+      </section>
+
+      <section className="rounded-md border border-border p-3">
+        <p className="mb-2 text-xs uppercase tracking-wide text-muted">
+          Decoder Hypotheses (Debug)
+        </p>
+        <div className="space-y-3">
+          {result.decoder.hypotheses
+            .slice(0, result.debug.decoder_top_k)
+            .map((hypothesis) => (
+              <div
+                key={`${hypothesis.rank}-${hypothesis.text}`}
+                className="rounded-md bg-black/30 p-3"
+              >
+                <p className="text-xs uppercase tracking-wide text-muted">
+                  Rank {hypothesis.rank}
+                </p>
+                <p className="mt-1 font-mono text-sm text-foreground">
+                  {hypothesis.text || "(empty prediction)"}
+                </p>
+                <p className="mt-2 text-xs text-muted">
+                  Acoustic score: {displayScore(hypothesis.acoustic_score)} |
+                  LM score: {displayScore(hypothesis.lm_score)} |
+                  Combined score: {displayScore(hypothesis.combined_score)}
+                </p>
+              </div>
+            ))}
+        </div>
       </section>
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

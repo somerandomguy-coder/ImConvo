@@ -38,11 +38,17 @@ if str(ROOT_DIR) not in sys.path:
 from src import (
     BLANK_IDX,
     CHAR_LIST,
+    DEFAULT_BEAM_WIDTH,
+    DEFAULT_DEBUG_TOP_K,
+    DEFAULT_DECODER_MODE,
+    DEFAULT_NGRAM_ALPHA,
     NUM_CHARS,
     SPACE_IDX,
     LipReadingCTC,
     char_indices_to_text,
+    decode_logits,
     extract_lip_frames,
+    list_decoder_specs,
     parse_alignment_text,
 )
 
@@ -362,6 +368,9 @@ def _run_inference_from_video_path(
     content_size_bytes: int,
     model_path: str | None,
     expected_text: str | None,
+    decoder_mode: str,
+    beam_width: int,
+    debug_top_k: int,
 ) -> dict[str, Any]:
     total_start = time.perf_counter()
 
@@ -392,15 +401,18 @@ def _run_inference_from_video_path(
 
     inference_start = time.perf_counter()
     logits = model(input_tensor, training=False)
-    decoded = model.decode_greedy(logits)
+    decode_result = decode_logits(
+        logits,
+        mode=decoder_mode,
+        beam_width=beam_width,
+        debug_top_k=debug_top_k,
+        ngram_alpha=DEFAULT_NGRAM_ALPHA,
+    )
     inference_ms = (time.perf_counter() - inference_start) * 1000
 
     raw_timestep_indices = np.argmax(logits.numpy()[0], axis=-1).astype(int).tolist()
     raw_timestep_tokens = [_token_from_index(i) for i in raw_timestep_indices]
-
-    pred_indices = decoded[0]
-    pred_indices = pred_indices[pred_indices >= 0]
-    predicted_text = char_indices_to_text(pred_indices.tolist()).lower()
+    predicted_text = decode_result.final_text
 
     reference_text, reference_source = _resolve_reference_text(file_name, expected_text)
     wer = compute_wer(reference_text, predicted_text) if reference_text is not None else None
@@ -431,10 +443,21 @@ def _run_inference_from_video_path(
             "processed_shape": list(frames.shape),
         },
         "preview_url": preview_path,
+        "decoder": {
+            "mode": decode_result.mode,
+            "label": decode_result.label,
+            "beam_width": decode_result.beam_width,
+            "final_text": decode_result.final_text,
+            "hypotheses": decode_result.hypotheses,
+            "metadata": decode_result.metadata,
+        },
         "debug": {
             "raw_timestep_indices": raw_timestep_indices,
             "raw_timestep_tokens": raw_timestep_tokens,
             "raw_timestep_text": " ".join(raw_timestep_tokens),
+            "collapsed_indices": decode_result.collapsed_indices,
+            "collapsed_text": decode_result.final_text,
+            "decoder_top_k": decode_result.debug_top_k,
         },
         "device_specs": get_device_specs(),
     }
@@ -451,6 +474,11 @@ def health() -> dict[str, Any]:
         "tf_version": tf.__version__,
         "device_used": "GPU" if tf.config.list_physical_devices("GPU") else "CPU",
     }
+
+
+@app.get("/decoders")
+def list_decoders() -> dict[str, Any]:
+    return {"default_mode": DEFAULT_DECODER_MODE, "decoders": list_decoder_specs()}
 
 
 @app.get("/examples")
@@ -483,6 +511,9 @@ async def analyze(
     file: UploadFile = File(...),
     model_path: str | None = Form(default=None),
     expected_text: str | None = Form(default=None),
+    decoder_mode: str = Form(default=DEFAULT_DECODER_MODE),
+    beam_width: int = Form(default=DEFAULT_BEAM_WIDTH),
+    debug_top_k: int = Form(default=DEFAULT_DEBUG_TOP_K),
 ) -> dict[str, Any]:
     suffix = Path(file.filename or "upload.bin").suffix or ".bin"
 
@@ -498,6 +529,9 @@ async def analyze(
             content_size_bytes=len(content),
             model_path=model_path,
             expected_text=expected_text,
+            decoder_mode=decoder_mode,
+            beam_width=beam_width,
+            debug_top_k=debug_top_k,
         )
     finally:
         try:
@@ -511,6 +545,9 @@ def analyze_example(
     example_name: str = Form(...),
     model_path: str | None = Form(default=None),
     expected_text: str | None = Form(default=None),
+    decoder_mode: str = Form(default=DEFAULT_DECODER_MODE),
+    beam_width: int = Form(default=DEFAULT_BEAM_WIDTH),
+    debug_top_k: int = Form(default=DEFAULT_DEBUG_TOP_K),
 ) -> dict[str, Any]:
     example_path = _resolve_example_path(example_name)
     return _run_inference_from_video_path(
@@ -519,6 +556,9 @@ def analyze_example(
         content_size_bytes=example_path.stat().st_size,
         model_path=model_path,
         expected_text=expected_text,
+        decoder_mode=decoder_mode,
+        beam_width=beam_width,
+        debug_top_k=debug_top_k,
     )
 
 

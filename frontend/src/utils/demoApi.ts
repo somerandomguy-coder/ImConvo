@@ -20,12 +20,30 @@ export interface AnalyzeRequest {
   file: File;
   modelPath?: string;
   expectedText?: string;
+  decoderMode?: string;
+  beamWidth?: number;
+  debugTopK?: number;
 }
 
 export interface AnalyzeExampleRequest {
   exampleName: string;
   modelPath?: string;
   expectedText?: string;
+  decoderMode?: string;
+  beamWidth?: number;
+  debugTopK?: number;
+}
+
+export interface DecoderSpec {
+  mode: string;
+  label: string;
+  description: string;
+  available: boolean;
+}
+
+export interface DecoderListResponse {
+  default_mode: string;
+  decoders: DecoderSpec[];
 }
 
 export interface AnalyzeResponse {
@@ -51,10 +69,32 @@ export interface AnalyzeResponse {
     processed_shape: number[];
   };
   preview_url: string | null;
+  decoder: {
+    mode: string;
+    label: string;
+    beam_width: number;
+    final_text: string;
+    metadata: {
+      lm_type?: string;
+      lm_artifact?: string;
+      ngram_alpha?: number;
+    };
+    hypotheses: Array<{
+      rank: number;
+      text: string;
+      collapsed_indices: number[];
+      acoustic_score: number | null;
+      lm_score: number | null;
+      combined_score: number | null;
+    }>;
+  };
   debug: {
     raw_timestep_indices: number[];
     raw_timestep_tokens: string[];
     raw_timestep_text: string;
+    collapsed_indices: number[];
+    collapsed_text: string;
+    decoder_top_k: number;
   };
   device_specs: {
     cpu_model: string | null;
@@ -74,6 +114,11 @@ export async function checkDemoHealth(): Promise<HealthStatus> {
   return data;
 }
 
+export async function listDecoders(): Promise<DecoderListResponse> {
+  const { data } = await demoApi.get<DecoderListResponse>("/decoders");
+  return data;
+}
+
 export async function analyzeDemoVideo(
   payload: AnalyzeRequest,
 ): Promise<AnalyzeResponse> {
@@ -84,6 +129,15 @@ export async function analyzeDemoVideo(
   }
   if (payload.expectedText?.trim()) {
     formData.append("expected_text", payload.expectedText.trim());
+  }
+  if (payload.decoderMode?.trim()) {
+    formData.append("decoder_mode", payload.decoderMode.trim());
+  }
+  if (payload.beamWidth) {
+    formData.append("beam_width", String(payload.beamWidth));
+  }
+  if (payload.debugTopK) {
+    formData.append("debug_top_k", String(payload.debugTopK));
   }
 
   const { data } = await demoApi.post<AnalyzeResponse>("/analyze", formData, {
@@ -117,6 +171,15 @@ export async function analyzeDemoExample(
   }
   if (payload.expectedText?.trim()) {
     formData.append("expected_text", payload.expectedText.trim());
+  }
+  if (payload.decoderMode?.trim()) {
+    formData.append("decoder_mode", payload.decoderMode.trim());
+  }
+  if (payload.beamWidth) {
+    formData.append("beam_width", String(payload.beamWidth));
+  }
+  if (payload.debugTopK) {
+    formData.append("debug_top_k", String(payload.debugTopK));
   }
 
   const { data } = await demoApi.post<AnalyzeResponse>(

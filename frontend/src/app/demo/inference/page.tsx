@@ -7,12 +7,17 @@ import {
   analyzeDemoExample,
   analyzeDemoVideo,
   checkDemoHealth,
+  listDecoders,
   listDemoExamples,
   type AnalyzeResponse,
+  type DecoderSpec,
   type HealthStatus,
 } from "@/utils/demoApi";
 
 const DEFAULT_MODEL_PATH = "checkpoints/best_ctc_model.keras";
+const DEFAULT_DECODER_MODE = "greedy_ctc";
+const DEFAULT_BEAM_WIDTH = 10;
+const DEFAULT_DEBUG_TOP_K = 5;
 
 export default function DemoInferencePage() {
   const [file, setFile] = useState<File | null>(null);
@@ -24,6 +29,9 @@ export default function DemoInferencePage() {
   const [error, setError] = useState<string | null>(null);
   const [examples, setExamples] = useState<string[]>([]);
   const [selectedExample, setSelectedExample] = useState("");
+  const [decoders, setDecoders] = useState<DecoderSpec[]>([]);
+  const [decoderMode, setDecoderMode] = useState(DEFAULT_DECODER_MODE);
+  const [beamWidth, setBeamWidth] = useState(DEFAULT_BEAM_WIDTH);
 
   useEffect(() => {
     let mounted = true;
@@ -37,6 +45,15 @@ export default function DemoInferencePage() {
         const message =
           err instanceof Error ? err.message : "Failed to connect to inference API.";
         setError(message);
+      });
+    listDecoders()
+      .then((data) => {
+        if (!mounted) return;
+        setDecoders(data.decoders);
+        setDecoderMode(data.default_mode || DEFAULT_DECODER_MODE);
+      })
+      .catch(() => {
+        // Keep the page usable even if decoder discovery fails.
       });
     listDemoExamples(120)
       .then((data) => {
@@ -65,6 +82,9 @@ export default function DemoInferencePage() {
         file,
         modelPath,
         expectedText,
+        decoderMode,
+        beamWidth,
+        debugTopK: DEFAULT_DEBUG_TOP_K,
       });
       setResult(analyzed);
     } catch (err: unknown) {
@@ -95,6 +115,9 @@ export default function DemoInferencePage() {
         exampleName: selectedExample,
         modelPath,
         expectedText,
+        decoderMode,
+        beamWidth,
+        debugTopK: DEFAULT_DEBUG_TOP_K,
       });
       setResult(analyzed);
     } catch (err: unknown) {
@@ -138,7 +161,7 @@ export default function DemoInferencePage() {
         </section>
 
         <section className="rounded-xl border border-border bg-card p-5">
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <label className="space-y-1">
               <span className="text-sm font-medium text-foreground">
                 Model path
@@ -165,6 +188,26 @@ export default function DemoInferencePage() {
 
             <label className="space-y-1">
               <span className="text-sm font-medium text-foreground">
+                Decoder mode
+              </span>
+              <select
+                value={decoderMode}
+                onChange={(e) => setDecoderMode(e.target.value)}
+                className="w-full rounded-md border border-border bg-black/20 px-3 py-2 text-sm text-foreground outline-none ring-accent/40 focus:ring-2"
+              >
+                {decoders.length === 0 && (
+                  <option value={DEFAULT_DECODER_MODE}>Greedy CTC</option>
+                )}
+                {decoders.map((decoder) => (
+                  <option key={decoder.mode} value={decoder.mode}>
+                    {decoder.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-foreground">
                 Server example (s3_processed)
               </span>
               <select
@@ -181,6 +224,21 @@ export default function DemoInferencePage() {
                   </option>
                 ))}
               </select>
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-foreground">
+                Beam width
+              </span>
+              <input
+                type="number"
+                min={2}
+                step={1}
+                value={beamWidth}
+                onChange={(e) => setBeamWidth(Number(e.target.value) || DEFAULT_BEAM_WIDTH)}
+                className="w-full rounded-md border border-border bg-black/20 px-3 py-2 text-sm text-foreground outline-none ring-accent/40 focus:ring-2"
+                disabled={decoderMode !== "beam_ctc"}
+              />
             </label>
           </div>
         </section>

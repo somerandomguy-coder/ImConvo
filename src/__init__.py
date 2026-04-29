@@ -21,6 +21,15 @@ from src.dataset import (
     discover_samples,
 )
 from src.model import LipReadingCTC, count_parameters
+from src.decoding import (
+    DEFAULT_BEAM_WIDTH,
+    DEFAULT_DEBUG_TOP_K,
+    DEFAULT_DECODER_MODE,
+    DEFAULT_NGRAM_ALPHA,
+    GRID_NGRAM_ARTIFACT,
+    decode_logits,
+    list_decoder_specs,
+)
 
 __all__ = [
     # Constants
@@ -47,4 +56,12 @@ __all__ = [
     # Model
     "LipReadingCTC",
     "count_parameters",
+    # Decoding
+    "DEFAULT_BEAM_WIDTH",
+    "DEFAULT_DEBUG_TOP_K",
+    "DEFAULT_DECODER_MODE",
+    "DEFAULT_NGRAM_ALPHA",
+    "GRID_NGRAM_ARTIFACT",
+    "decode_logits",
+    "list_decoder_specs",
 ]
