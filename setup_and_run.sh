@@ -14,15 +14,7 @@ echo "📥 Checking dependencies..."
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# --- 2. ClearML Initialization ---
-if [ ! -f "clearml.conf" ]; then
-    read -p "❓ ClearML config not found. Initialize now? (y/n): " init_clearml
-    if [[ $init_clearml == "y" ]]; then
-        clearml-init
-    fi
-fi
-
-# --- 3. Data & Preprocessing Check ---
+# --- 2. Data & Preprocessing Check ---
 if [ ! -d "./data" ]; then
     read -p "⚠️ Raw data (GRID) not found. Download it now? (y/n): " dl_data
     if [[ $dl_data == "y" ]]; then
@@ -38,7 +30,7 @@ if [ ! -d "./data/preprocessed" ]; then
     fi
 fi
 
-# --- 4. Frontend Setup ---
+# --- 3. Frontend Setup ---
 if [ -d "./frontend" ]; then
     echo "🌐 Setting up frontend..."
     if ! command -v pnpm &> /dev/null; then
@@ -52,7 +44,7 @@ if [ -d "./frontend" ]; then
     echo "✅ Frontend setup complete."
 fi
 
-# --- 5. Main Menu ---
+# --- 4. Main Menu ---
 echo "------------------------------------------------"
 echo "✅ Setup Complete. What would you like to do?"
 echo "1) Train the model (train.py)"

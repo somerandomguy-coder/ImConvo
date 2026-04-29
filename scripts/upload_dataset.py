@@ -9,11 +9,6 @@ import argparse
 import os
 import sys
 
-# Must set config path BEFORE importing clearml
-os.environ["CLEARML_CONFIG_FILE"] = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "clearml.conf"
-)
-
 # Add project root so we can import src.*
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -120,4 +115,3 @@ def upload_dataset(dataset_name: str = "GRID_Preprocessed"):
 if __name__ == "__main__":
     run_preprocessing()
     upload_dataset()
-

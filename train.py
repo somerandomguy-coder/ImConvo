@@ -18,6 +18,7 @@ import math
 
 import numpy as np
 import tensorflow as tf
+from clearml import Task
 from src import NUM_CHARS, LipReadingCTC, char_indices_to_text, count_parameters
 from src.dataset import (
     build_split_arrays,
@@ -27,31 +28,13 @@ from src.dataset import (
 )
 
 # ---------------------------------------------------------------------------
-# ClearML (optional)
+# ClearML (minimal lifecycle only)
 # ---------------------------------------------------------------------------
-
-os.environ["CLEARML_CONFIG_FILE"] = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "clearml.conf"
+task = Task.init(
+    project_name="ImConvo",
+    task_name="LipReadingCTC_Training",
+    task_type=Task.TaskTypes.training,
 )
-
-USE_CLEARML = False
-task = None
-try:
-    from clearml import Task
-
-    task = Task.init(
-        project_name="ImConvo",
-        task_name="LipReadingCTC_Training",
-        task_type=Task.TaskTypes.training,
-    )
-    USE_CLEARML = True
-    print("[ClearML] Connected successfully.")
-except BaseException as e:
-    print(
-        f"[ClearML] Not available ({type(e).__name__}: {e}). "
-        "Training locally without tracking."
-    )
-    task = None
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -68,30 +51,6 @@ CONFIG = {
     "patience": 7,
     "seed": 42,
 }
-
-if USE_CLEARML and task:
-    task.connect(CONFIG)
-
-
-# ---------------------------------------------------------------------------
-# ClearML callback
-# ---------------------------------------------------------------------------
-
-
-class ClearMLCallback(tf.keras.callbacks.Callback):
-    def __init__(self, clearml_task):
-        super().__init__()
-        self.task = clearml_task
-
-    def on_epoch_end(self, epoch, logs=None):
-        if not self.task or not logs:
-            return
-        logger = self.task.get_logger()
-        for key, value in logs.items():
-            series = "val" if key.startswith("val_") else "train"
-            title = key[4:] if key.startswith("val_") else key
-            logger.report_scalar(title, series, float(value), iteration=epoch + 1)
-
 
 # ---------------------------------------------------------------------------
 # Evaluation utilities
@@ -224,22 +183,14 @@ def main():
             f"\n[ERROR] Preprocessed data not found at: {CONFIG['preprocessed_dir']}\n"
             f"Run this first:  python scripts/preprocess.py\n"
         )
-        if USE_CLEARML and task:
-            try:
-                task.close()
-            except BaseException:
-                pass
+        task.close()
         return
     if not os.path.isdir(CONFIG["split_dir"]):
         print(
             f"\n[ERROR] Split manifests not found at: {CONFIG['split_dir']}\n"
             f"Run this first: python scripts/build_split_manifests.py\n"
         )
-        if USE_CLEARML and task:
-            try:
-                task.close()
-            except BaseException:
-                pass
+        task.close()
         return
 
     # ---- Create tf.data pipelines ----
@@ -301,9 +252,6 @@ def main():
             monitor="val_loss", save_best_only=True, verbose=1,
         ),
     ]
-    if USE_CLEARML and task:
-        callbacks.append(ClearMLCallback(task))
-
     # ---- Train ----
     print(f"\n{'='*60}")
     print("Starting CTC Training")
@@ -347,21 +295,6 @@ def main():
         split_name="val_is",
     )
 
-    if USE_CLEARML and task:
-        logger = task.get_logger()
-        logger.report_scalar(
-            "WER", "val_oos", val_oos_wer, iteration=CONFIG["num_epochs"]
-        )
-        logger.report_scalar(
-            "CER", "val_oos", val_oos_cer, iteration=CONFIG["num_epochs"]
-        )
-        logger.report_scalar(
-            "WER", "val_is", val_is_wer, iteration=CONFIG["num_epochs"]
-        )
-        logger.report_scalar(
-            "CER", "val_is", val_is_cer, iteration=CONFIG["num_epochs"]
-        )
-
     # ---- Save history ----
     history_path = os.path.join(checkpoint_dir, "training_history.json")
     history_data = {k: [float(v) for v in vals] for k, vals in history.history.items()}
@@ -373,11 +306,7 @@ def main():
         json.dump(history_data, f, indent=2)
     print(f"\nTraining history saved to {history_path}")
 
-    if USE_CLEARML and task:
-        try:
-            task.close()
-        except BaseException:
-            pass
+    task.close()
 
     print("\n✓ Training complete.")
 
