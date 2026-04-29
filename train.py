@@ -18,8 +18,13 @@ import math
 
 import numpy as np
 import tensorflow as tf
-from src import (BLANK_IDX, NUM_CHARS, LipReadingCTC, char_indices_to_text,
-                 count_parameters, create_dataset_pipeline)
+from src import NUM_CHARS, LipReadingCTC, char_indices_to_text, count_parameters
+from src.dataset import (
+    build_split_arrays,
+    create_ctc_dataset,
+    create_dataset_pipeline,
+    load_split_ids,
+)
 
 # ---------------------------------------------------------------------------
 # ClearML (optional)
@@ -55,11 +60,11 @@ except BaseException as e:
 CONFIG = {
     "data_dir": "./data/",
     "preprocessed_dir": "./data/preprocessed/",
+    "split_dir": "./splits/grid_v1",
     "batch_size": 48,
     "num_epochs": 1,
     "learning_rate": 3e-4,
     "weight_decay": 1e-4,
-    "val_split": 0.2,
     "patience": 7,
     "seed": 42,
 }
@@ -147,6 +152,60 @@ def compute_cer(reference: str, hypothesis: str) -> float:
     return d[r][h] / max(r, 1)
 
 
+def evaluate_split(
+    model: LipReadingCTC,
+    dataset: tf.data.Dataset,
+    steps: int,
+    split_name: str,
+    preview_limit: int = 10,
+) -> tuple[float, float, int]:
+    """Decode and evaluate a dataset split, returning (wer, cer, num_samples)."""
+    print(f"\n{'='*60}")
+    print(f"CTC Decoding — {split_name}")
+    print(f"{'='*60}\n")
+
+    total_wer = 0.0
+    total_cer = 0.0
+    num_samples = 0
+
+    for batch in dataset.take(steps):
+        x, y = batch
+        logits = model(x, training=False)
+        decoded_batch = model.decode_greedy(logits)
+
+        labels = y["labels"].numpy()
+        lengths = y["label_length"].numpy()
+
+        for i in range(len(labels)):
+            gt_indices = labels[i][:lengths[i]]
+            gt_text = char_indices_to_text(gt_indices.tolist())
+
+            pred_indices = decoded_batch[i]
+            pred_indices = pred_indices[pred_indices >= 0]
+            pred_text = char_indices_to_text(pred_indices.tolist())
+
+            wer = compute_wer(gt_text, pred_text)
+            cer = compute_cer(gt_text, pred_text)
+            total_wer += wer
+            total_cer += cer
+            num_samples += 1
+
+            if num_samples <= preview_limit:
+                print(f"  GT:   '{gt_text}'")
+                print(f"  Pred: '{pred_text}'")
+                print(f"  WER: {wer:.2f} | CER: {cer:.2f}")
+                print()
+
+    avg_wer = total_wer / max(num_samples, 1)
+    avg_cer = total_cer / max(num_samples, 1)
+    print(f"{'='*60}")
+    print(f"{split_name} Average WER: {avg_wer:.4f} ({avg_wer*100:.1f}%)")
+    print(f"{split_name} Average CER: {avg_cer:.4f} ({avg_cer*100:.1f}%)")
+    print(f"{'='*60}")
+
+    return avg_wer, avg_cer, num_samples
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -171,20 +230,38 @@ def main():
             except BaseException:
                 pass
         return
+    if not os.path.isdir(CONFIG["split_dir"]):
+        print(
+            f"\n[ERROR] Split manifests not found at: {CONFIG['split_dir']}\n"
+            f"Run this first: python scripts/build_split_manifests.py\n"
+        )
+        if USE_CLEARML and task:
+            try:
+                task.close()
+            except BaseException:
+                pass
+        return
 
     # ---- Create tf.data pipelines ----
-    train_ds, val_ds, val_paths, val_labels, val_label_lengths = create_dataset_pipeline(
+    (
+        train_ds,
+        val_ds,
+        train_paths,
+        train_labels,
+        train_label_lengths,
+        val_paths,
+        val_labels,
+        val_label_lengths,
+    ) = create_dataset_pipeline(
         preprocessed_dir=CONFIG["preprocessed_dir"],
+        split_dir=CONFIG["split_dir"],
         batch_size=CONFIG["batch_size"],
-        val_split=CONFIG["val_split"],
-        seed=CONFIG["seed"],
+        train_split="train",
+        val_split="val_oos",
     )
 
-    # Compute steps from known dataset sizes
-    num_train = len(val_paths)  # val_paths length == num_val
-    # Recompute from split ratio
-    total_samples = int(len(val_paths) / CONFIG["val_split"])  # approximate
-    num_train_samples = total_samples - len(val_paths)
+    # Compute steps from known hard-split sizes
+    num_train_samples = len(train_paths)
     num_val_samples = len(val_paths)
     steps_per_epoch = math.ceil(num_train_samples / CONFIG["batch_size"])
     validation_steps = math.ceil(num_val_samples / CONFIG["batch_size"])
@@ -243,64 +320,55 @@ def main():
     )
 
     # ---- Decode & Evaluate ----
-    print(f"\n{'='*60}")
-    print("CTC Decoding — Validation Samples")
-    print(f"{'='*60}\n")
+    val_oos_wer, val_oos_cer, _ = evaluate_split(
+        model=model,
+        dataset=val_ds,
+        steps=validation_steps,
+        split_name="val_oos",
+    )
 
-    total_wer = 0.0
-    total_cer = 0.0
-    num_samples = 0
-
-    for batch in val_ds.take(validation_steps):
-        x, y = batch
-        logits = model(x, training=False)
-        decoded_batch = model.decode_greedy(logits)
-
-        labels = y["labels"].numpy()
-        lengths = y["label_length"].numpy()
-
-        for i in range(len(labels)):
-            # Ground truth
-            gt_indices = labels[i][:lengths[i]]
-            gt_text = char_indices_to_text(gt_indices.tolist())
-
-            # Prediction
-            pred_indices = decoded_batch[i]
-            pred_indices = pred_indices[pred_indices >= 0]  # remove padding
-            pred_text = char_indices_to_text(pred_indices.tolist())
-
-            wer = compute_wer(gt_text, pred_text)
-            cer = compute_cer(gt_text, pred_text)
-
-            total_wer += wer
-            total_cer += cer
-            num_samples += 1
-
-            # Print first 10 examples
-            if num_samples <= 10:
-                print(f"  GT:   '{gt_text}'")
-                print(f"  Pred: '{pred_text}'")
-                print(f"  WER: {wer:.2f} | CER: {cer:.2f}")
-                print()
-
-    avg_wer = total_wer / max(num_samples, 1)
-    avg_cer = total_cer / max(num_samples, 1)
-
-    print(f"{'='*60}")
-    print(f"Average WER: {avg_wer:.4f} ({avg_wer*100:.1f}%)")
-    print(f"Average CER: {avg_cer:.4f} ({avg_cer*100:.1f}%)")
-    print(f"{'='*60}")
+    val_is_ids = load_split_ids(split_dir=CONFIG["split_dir"], split_name="val_is")
+    val_is_paths, val_is_labels, val_is_lengths = build_split_arrays(
+        preprocessed_dir=CONFIG["preprocessed_dir"],
+        sample_ids=val_is_ids,
+    )
+    val_is_ds = create_ctc_dataset(
+        val_is_paths,
+        val_is_labels,
+        val_is_lengths,
+        CONFIG["batch_size"],
+        shuffle=False,
+    )
+    val_is_steps = math.ceil(len(val_is_paths) / CONFIG["batch_size"])
+    val_is_wer, val_is_cer, _ = evaluate_split(
+        model=model,
+        dataset=val_is_ds,
+        steps=val_is_steps,
+        split_name="val_is",
+    )
 
     if USE_CLEARML and task:
         logger = task.get_logger()
-        logger.report_scalar("WER", "val", avg_wer, iteration=CONFIG["num_epochs"])
-        logger.report_scalar("CER", "val", avg_cer, iteration=CONFIG["num_epochs"])
+        logger.report_scalar(
+            "WER", "val_oos", val_oos_wer, iteration=CONFIG["num_epochs"]
+        )
+        logger.report_scalar(
+            "CER", "val_oos", val_oos_cer, iteration=CONFIG["num_epochs"]
+        )
+        logger.report_scalar(
+            "WER", "val_is", val_is_wer, iteration=CONFIG["num_epochs"]
+        )
+        logger.report_scalar(
+            "CER", "val_is", val_is_cer, iteration=CONFIG["num_epochs"]
+        )
 
     # ---- Save history ----
     history_path = os.path.join(checkpoint_dir, "training_history.json")
     history_data = {k: [float(v) for v in vals] for k, vals in history.history.items()}
-    history_data["avg_wer"] = avg_wer
-    history_data["avg_cer"] = avg_cer
+    history_data["eval"] = {
+        "val_oos": {"wer": float(val_oos_wer), "cer": float(val_oos_cer)},
+        "val_is": {"wer": float(val_is_wer), "cer": float(val_is_cer)},
+    }
     with open(history_path, "w") as f:
         json.dump(history_data, f, indent=2)
     print(f"\nTraining history saved to {history_path}")

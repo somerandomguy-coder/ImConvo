@@ -16,9 +16,12 @@ from src.utils import (
     extract_lip_frames,
 )
 from src.dataset import (
+    build_split_arrays,
     create_dataset_pipeline,
     create_ctc_dataset,
     discover_samples,
+    load_split_ids,
+    resolve_sample_ids,
 )
 from src.model import LipReadingCTC, count_parameters
 from src.decoding import (
@@ -53,6 +56,9 @@ __all__ = [
     "create_dataset_pipeline",
     "create_ctc_dataset",
     "discover_samples",
+    "load_split_ids",
+    "resolve_sample_ids",
+    "build_split_arrays",
     # Model
     "LipReadingCTC",
     "count_parameters",

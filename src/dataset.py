@@ -1,17 +1,15 @@
 """
 Dataset module for CTC-based lip reading on the GRID corpus.
 
-Lazily loads preprocessed .npy video files and provides
-character-level labels for CTC training.
+Loads preprocessed .npy video files and character-level labels for CTC training.
+Supports deterministic split manifests to prevent data leakage.
 """
 
 import os
-from collections.abc import Iterator
 
 import numpy as np
 import tensorflow as tf
-from src.utils import (BLANK_IDX, FRAME_HEIGHT, FRAME_WIDTH, MAX_CHAR_LEN,
-                       MAX_FRAMES, SILENCE_TOKENS, parse_alignment_chars)
+from src.utils import FRAME_HEIGHT, FRAME_WIDTH, MAX_FRAMES, parse_alignment_chars
 
 # ---------------------------------------------------------------------------
 # Sample discovery
@@ -42,6 +40,79 @@ def discover_samples(preprocessed_dir: str) -> list[tuple[str, str]]:
             samples.append((npy_path, align_path))
 
     return samples
+
+
+def load_split_ids(split_dir: str, split_name: str) -> list[str]:
+    """
+    Load sample IDs from a split manifest file.
+
+    Args:
+        split_dir: Directory containing split text files.
+        split_name: Split key, e.g. "train", "val_oos".
+
+    Returns:
+        Ordered list of sample IDs.
+    """
+    split_path = os.path.join(split_dir, f"{split_name}.txt")
+    if not os.path.exists(split_path):
+        raise FileNotFoundError(f"Split file not found: {split_path}")
+
+    with open(split_path, encoding="utf-8") as f:
+        sample_ids = [line.strip() for line in f if line.strip()]
+
+    if not sample_ids:
+        raise ValueError(f"Split file is empty: {split_path}")
+    return sample_ids
+
+
+def resolve_sample_ids(
+    preprocessed_dir: str,
+    sample_ids: list[str],
+) -> list[tuple[str, str]]:
+    """
+    Resolve sample IDs into strict (npy_path, align_path) pairs.
+    Raises if any referenced sample is missing.
+    """
+    align_dir = os.path.join(preprocessed_dir, "align")
+    resolved: list[tuple[str, str]] = []
+    missing: list[str] = []
+
+    for sample_id in sample_ids:
+        npy_path = os.path.join(preprocessed_dir, f"{sample_id}.npy")
+        align_path = os.path.join(align_dir, f"{sample_id}.align")
+        if not (os.path.exists(npy_path) and os.path.exists(align_path)):
+            missing.append(sample_id)
+            continue
+        resolved.append((npy_path, align_path))
+
+    if missing:
+        preview = ", ".join(missing[:5])
+        raise FileNotFoundError(
+            f"{len(missing)} sample IDs from split are missing .npy/.align. "
+            f"First missing: {preview}"
+        )
+    return resolved
+
+
+def build_split_arrays(
+    preprocessed_dir: str,
+    sample_ids: list[str],
+) -> tuple[list[str], np.ndarray, np.ndarray]:
+    """
+    Build paths + label arrays for a specific split.
+    """
+    samples = resolve_sample_ids(preprocessed_dir=preprocessed_dir, sample_ids=sample_ids)
+
+    npy_paths: list[str] = []
+    labels: list[np.ndarray] = []
+    lengths: list[int] = []
+    for npy_path, align_path in samples:
+        char_indices, length = parse_alignment_chars(align_path)
+        npy_paths.append(npy_path)
+        labels.append(char_indices)
+        lengths.append(length)
+
+    return npy_paths, np.array(labels, dtype=np.int32), np.array(lengths, dtype=np.int32)
 
 
 # ---------------------------------------------------------------------------
@@ -126,45 +197,40 @@ def create_ctc_dataset(
 
 
 def create_dataset_pipeline(
-    preprocessed_dir: str, batch_size: int, val_split: float = 0.2, seed: int = 42)-> tuple[tf.data.Dataset, tf.data.Dataset, list[str], np.ndarray, np.ndarray]:
+    preprocessed_dir: str,
+    split_dir: str,
+    batch_size: int,
+    train_split: str = "train",
+    val_split: str = "val_oos",
+) -> tuple[
+    tf.data.Dataset,
+    tf.data.Dataset,
+    list[str],
+    np.ndarray,
+    np.ndarray,
+    list[str],
+    np.ndarray,
+    np.ndarray,
+]:
     """
-    Build train/val tf.data pipelines for CTC training.
+    Build train/validation tf.data pipelines for CTC training using hard split manifests.
 
     Returns:
-        train_ds, val_ds, val_paths, val_labels, val_label_lengths
+        train_ds, val_ds,
+        train_paths, train_labels, train_label_lengths,
+        val_paths, val_labels, val_label_lengths
     """
-    samples = discover_samples(preprocessed_dir)
-    print(f"[Dataset] Discovered {len(samples)} preprocessed samples.")
+    train_ids = load_split_ids(split_dir=split_dir, split_name=train_split)
+    val_ids = load_split_ids(split_dir=split_dir, split_name=val_split)
 
-    all_npy_paths = []
-    all_labels = []
-    all_lengths = []
-
-    for npy_path, align_path in samples:
-        char_indices, length = parse_alignment_chars(align_path)
-        all_npy_paths.append(npy_path)
-        all_labels.append(char_indices)
-        all_lengths.append(length)
-
-    all_labels = np.array(all_labels, dtype=np.int32)
-    all_lengths = np.array(all_lengths, dtype=np.int32)
-
-    # Train / val split
-    rng = np.random.RandomState(seed)
-    indices = np.arange(len(all_npy_paths))
-    rng.shuffle(indices)
-
-    split = int(len(indices) * (1 - val_split))
-    train_idx = indices[:split]
-    val_idx = indices[split:]
-
-    train_paths = [all_npy_paths[i] for i in train_idx]
-    train_labels = all_labels[train_idx]
-    train_lengths = all_lengths[train_idx]
-
-    val_paths = [all_npy_paths[i] for i in val_idx]
-    val_labels = all_labels[val_idx]
-    val_lengths = all_lengths[val_idx]
+    train_paths, train_labels, train_lengths = build_split_arrays(
+        preprocessed_dir=preprocessed_dir,
+        sample_ids=train_ids,
+    )
+    val_paths, val_labels, val_lengths = build_split_arrays(
+        preprocessed_dir=preprocessed_dir,
+        sample_ids=val_ids,
+    )
 
     print(f"[Dataset] Train: {len(train_paths)} | Val: {len(val_paths)}")
 
@@ -175,4 +241,13 @@ def create_dataset_pipeline(
         val_paths, val_labels, val_lengths, batch_size, shuffle=False
     )
 
-    return train_ds, val_ds, val_paths, val_labels, val_lengths
+    return (
+        train_ds,
+        val_ds,
+        train_paths,
+        train_labels,
+        train_lengths,
+        val_paths,
+        val_labels,
+        val_lengths,
+    )
