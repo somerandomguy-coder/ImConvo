@@ -215,7 +215,7 @@ Lipreading_using_Temporal_Convolutional_Networks/
 
 .codex
 
-*.keras
+offline/
 *.tar.gz
 learning_rate.json
 loss.json

@@ -1,11 +1,41 @@
 import os
 from datetime import datetime
 import math
+import argparse
 
 import numpy as np
 import tensorflow as tf
-from src import NUM_CHARS, LipReadingCTC, char_indices_to_text
+from src import MODEL_VARIANTS, NUM_CHARS, LipReadingCTC, build_lipreading_ctc, char_indices_to_text
 from src.dataset import build_split_arrays, create_ctc_dataset
+
+CONFIG = {
+    "model_variant": "bigru",
+    "batch_size": 8,
+    "preprocessed_dir": "./data/preprocessed/",
+    "split_dir": "./splits/grid_v1",
+}
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Evaluate lipreading model on hard splits")
+    parser.add_argument(
+        "--checkpoint-path",
+        required=True,
+        help="Path to model checkpoint file (.keras/.weights)",
+    )
+    parser.add_argument(
+        "--model-variant",
+        choices=MODEL_VARIANTS,
+        default=None,
+        help="Temporal backbone variant override",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=None,
+        help="Evaluation batch size override",
+    )
+    return parser.parse_args()
 
 # Re-use your compute functions from train.py
 def compute_wer(reference: str, hypothesis: str) -> float:
@@ -115,12 +145,14 @@ def evaluate_split(
 
 
 def run_evaluation():
-    BATCH_SIZE = 8
+    args = parse_args()
+    model_variant = (args.model_variant or CONFIG["model_variant"]).lower()
+    batch_size = args.batch_size or CONFIG["batch_size"]
 
     # 1. Setup paths
-    checkpoint_path = "./checkpoints/best_ctc_model.keras"
-    preprocessed_dir = "./data/preprocessed/"
-    split_dir = "./splits/grid_v1"
+    checkpoint_path = args.checkpoint_path
+    preprocessed_dir = CONFIG["preprocessed_dir"]
+    split_dir = CONFIG["split_dir"]
     report_path = (
         f"./reports/eval_result/eval_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
     )
@@ -136,7 +168,8 @@ def run_evaluation():
 
     # 3. Load Model
     print("🤖 Loading model weights...")
-    model = LipReadingCTC(num_chars=NUM_CHARS)
+    print(f"   Variant: {model_variant}")
+    model = build_lipreading_ctc(model_variant=model_variant, num_chars=NUM_CHARS)
     # Build model with dummy input
     _ = model(np.random.randn(1, 75, 80, 120, 1).astype(np.float32))
     model.load_weights(checkpoint_path)
@@ -156,9 +189,9 @@ def run_evaluation():
 
             paths, labels, lengths = build_split_arrays(preprocessed_dir, sample_ids)
             split_ds = create_ctc_dataset(
-                paths, labels, lengths, batch_size=BATCH_SIZE, shuffle=False
+                paths, labels, lengths, batch_size=batch_size, shuffle=False
             )
-            num_steps = math.ceil(len(paths) / BATCH_SIZE)
+            num_steps = math.ceil(len(paths) / batch_size)
             wer, cer, count = evaluate_split(
                 model=model,
                 split_name=split_name,
