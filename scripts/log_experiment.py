@@ -28,7 +28,12 @@ ROOT = Path(__file__).resolve().parents[1]
 EVAL_DIR = ROOT / "reports" / "eval_result"
 JSONL_PATH = ROOT / "experiments.jsonl"
 TRAIN_PY = ROOT / "train.py"
-CHECKPOINT_PATH = ROOT / "checkpoints" / "best_ctc_model.keras"
+VARIANT_CHECKPOINT_MAP = {
+    "bigru": "best_ctc_model_bigru.keras",
+    "gru": "best_ctc_model_gru.keras",
+    "bilstm": "best_ctc_model_bilstm.keras",
+    "transformer": "best_ctc_model_transformer.keras",
+}
 
 
 def detect_branch() -> str:
@@ -90,6 +95,7 @@ def extract_config_from_train() -> dict:
         "num_epochs": None,
         "resume_from_best_checkpoint": None,
         "split_dir": "./splits/grid_v1",
+        "model_variant": "bigru",
     }
     try:
         source = TRAIN_PY.read_text(encoding="utf-8")
@@ -119,8 +125,9 @@ def main() -> None:
     parser.add_argument("--run-id", default=None, help="Optional explicit run_id")
     parser.add_argument(
         "--model-variant",
-        default="LipReadingCTC-BiGRU-baseline",
-        help="Model variant label for tracking",
+        choices=["bigru", "gru", "bilstm", "transformer"],
+        default=None,
+        help="Model variant label override for tracking",
     )
     parser.add_argument(
         "--notes",
@@ -147,9 +154,11 @@ def main() -> None:
     split_dir = str(cfg.get("split_dir") or "./splits/grid_v1")
     split_version = Path(split_dir).name if split_dir else "unknown_split"
 
+    model_variant = (args.model_variant or str(cfg.get("model_variant") or "bigru")).lower()
+
     run_id = args.run_id or make_run_id(
         branch=branch,
-        model_variant=args.model_variant,
+        model_variant=model_variant,
         split_version=split_version,
     )
 
@@ -157,12 +166,14 @@ def main() -> None:
         "run_id": run_id,
         "date": datetime.now().strftime("%Y-%m-%d"),
         "branch": branch,
-        "base_checkpoint": str(CHECKPOINT_PATH.relative_to(ROOT)),
+        "base_checkpoint": str(
+            (ROOT / "checkpoints" / VARIANT_CHECKPOINT_MAP.get(model_variant, "best_ctc_model.keras")).relative_to(ROOT)
+        ),
         "resume_from_checkpoint": bool(cfg.get("resume_from_best_checkpoint")),
         "split_version": split_version,
         "train_split": "train",
         "val_oos_split": "val_oos",
-        "model_variant": args.model_variant,
+        "model_variant": model_variant,
         "decoder": "ctc_greedy",
         "batch_size": cfg.get("batch_size"),
         "learning_rate": cfg.get("learning_rate"),

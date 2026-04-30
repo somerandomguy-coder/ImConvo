@@ -23,7 +23,12 @@ from src.dataset import (
     load_split_ids,
     resolve_sample_ids,
 )
-from src.model import LipReadingCTC, count_parameters
+from src.model import (
+    MODEL_VARIANTS,
+    LipReadingCTC,
+    build_lipreading_ctc,
+    count_parameters,
+)
 from src.decoding import (
     DEFAULT_BEAM_WIDTH,
     DEFAULT_DEBUG_TOP_K,
@@ -60,7 +65,9 @@ __all__ = [
     "resolve_sample_ids",
     "build_split_arrays",
     # Model
+    "MODEL_VARIANTS",
     "LipReadingCTC",
+    "build_lipreading_ctc",
     "count_parameters",
     # Decoding
     "DEFAULT_BEAM_WIDTH",

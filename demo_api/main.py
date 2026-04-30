@@ -39,18 +39,21 @@ from src import (
     BLANK_IDX,
     CHAR_LIST,
     DEFAULT_BEAM_WIDTH,
+    MODEL_VARIANTS,
     DEFAULT_DEBUG_TOP_K,
     DEFAULT_DECODER_MODE,
     DEFAULT_NGRAM_ALPHA,
     NUM_CHARS,
     SPACE_IDX,
     LipReadingCTC,
+    build_lipreading_ctc,
     char_indices_to_text,
     decode_logits,
     extract_lip_frames,
     list_decoder_specs,
     parse_alignment_text,
 )
+from src.model import LegacyLipReadingCTC
 
 DEFAULT_MODEL_PATH = ROOT_DIR / "checkpoints" / "best_ctc_model.keras"
 PREVIEW_DIR = ROOT_DIR / "demo_api" / "preview_cache"
@@ -145,9 +148,51 @@ def _get_or_load_model(model_path: str) -> LipReadingCTC:
     if not os.path.exists(model_path):
         raise HTTPException(status_code=400, detail=f"Model path not found: {model_path}")
 
-    model = LipReadingCTC(num_chars=NUM_CHARS)
-    _ = model(np.random.randn(1, 75, 80, 120, 1).astype(np.float32))
-    model.load_weights(model_path)
+    def infer_variant_from_path(path: str) -> str:
+        stem = Path(path).stem.lower()
+        if stem.endswith("_bilstm"):
+            return "bilstm"
+        if stem.endswith("_gru"):
+            return "gru"
+        if stem.endswith("_transformer"):
+            return "transformer"
+        if stem.endswith("_bigru"):
+            return "bigru"
+        # Legacy default checkpoint name maps to baseline BiGRU.
+        return "bigru"
+
+    inferred = infer_variant_from_path(model_path)
+    candidates: list[str] = [inferred]
+    candidates.extend([v for v in MODEL_VARIANTS if v not in candidates])
+
+    load_errors: list[str] = []
+    model = None
+    for variant in candidates:
+        try:
+            candidate_model = build_lipreading_ctc(model_variant=variant, num_chars=NUM_CHARS)
+            _ = candidate_model(np.random.randn(1, 75, 80, 120, 1).astype(np.float32))
+            candidate_model.load_weights(model_path)
+            model = candidate_model
+            print(f"[DemoAPI] Loaded model '{model_path}' with variant='{variant}'.")
+            break
+        except Exception as exc:
+            load_errors.append(f"{variant}: {type(exc).__name__}: {exc}")
+
+    if model is None:
+        # Legacy fallback for checkpoints saved before backbone refactor.
+        try:
+            legacy_model = LegacyLipReadingCTC(num_chars=NUM_CHARS)
+            _ = legacy_model(np.random.randn(1, 75, 80, 120, 1).astype(np.float32))
+            legacy_model.load_weights(model_path)
+            model = legacy_model
+            print(f"[DemoAPI] Loaded legacy model '{model_path}' with LegacyLipReadingCTC.")
+        except Exception as legacy_exc:
+            load_errors.append(f"legacy_bigru: {type(legacy_exc).__name__}: {legacy_exc}")
+            joined = " | ".join(load_errors[:5])
+            raise RuntimeError(
+                "Could not load checkpoint with any known variant. "
+                f"Tried {candidates + ['legacy_bigru']}. Errors: {joined}"
+            )
 
     _MODEL_CACHE[model_path] = model
     _ACTIVE_MODEL_PATH = model_path
