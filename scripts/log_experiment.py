@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EVAL_DIR = ROOT / "reports" / "eval_result"
 JSONL_PATH = ROOT / "experiments.jsonl"
 TRAIN_PY = ROOT / "train.py"
+TRAINING_HISTORY_PATH = ROOT / "checkpoints" / "training_history.json"
 VARIANT_CHECKPOINT_MAP = {
     "bigru": "best_ctc_model_bigru.keras",
     "gru": "best_ctc_model_gru.keras",
@@ -96,6 +97,8 @@ def extract_config_from_train() -> dict:
         "resume_from_best_checkpoint": None,
         "split_dir": "./splits/grid_v1",
         "model_variant": "bigru",
+        "augmentation_profile": "off",
+        "freeze_config": {},
     }
     try:
         source = TRAIN_PY.read_text(encoding="utf-8")
@@ -111,6 +114,24 @@ def extract_config_from_train() -> dict:
     except Exception:
         pass
     return defaults
+
+
+def extract_latest_training_run() -> dict:
+    """Read the latest run metadata captured by train.py if available."""
+    if not TRAINING_HISTORY_PATH.exists():
+        return {}
+    try:
+        payload = json.loads(TRAINING_HISTORY_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+    if not isinstance(payload, dict):
+        return {}
+    runs = payload.get("runs")
+    if not isinstance(runs, list) or not runs:
+        return {}
+    latest = runs[-1]
+    return latest if isinstance(latest, dict) else {}
 
 
 def make_run_id(branch: str, model_variant: str, split_version: str) -> str:
@@ -150,11 +171,21 @@ def main() -> None:
     latest_report = find_latest_eval_report()
     metrics = parse_eval_metrics(latest_report)
     cfg = extract_config_from_train()
+    latest_run = extract_latest_training_run()
 
     split_dir = str(cfg.get("split_dir") or "./splits/grid_v1")
     split_version = Path(split_dir).name if split_dir else "unknown_split"
+    freeze_cfg = cfg.get("freeze_config") if isinstance(cfg.get("freeze_config"), dict) else {}
+    if isinstance(latest_run.get("freeze"), dict):
+        freeze_cfg = latest_run["freeze"]
 
-    model_variant = (args.model_variant or str(cfg.get("model_variant") or "bigru")).lower()
+    model_variant = (
+        args.model_variant
+        or str(latest_run.get("model_variant") or cfg.get("model_variant") or "bigru")
+    ).lower()
+    augmentation_profile = str(
+        latest_run.get("augmentation_profile") or cfg.get("augmentation_profile") or "off"
+    ).lower()
 
     run_id = args.run_id or make_run_id(
         branch=branch,
@@ -174,12 +205,18 @@ def main() -> None:
         "train_split": "train",
         "val_oos_split": "val_oos",
         "model_variant": model_variant,
+        "augmentation_profile": augmentation_profile,
+        "feature_time_masking": augmentation_profile == "strong",
         "decoder": "ctc_greedy",
         "batch_size": cfg.get("batch_size"),
         "learning_rate": cfg.get("learning_rate"),
         "weight_decay": cfg.get("weight_decay"),
         "patience": cfg.get("patience"),
         "num_epochs": cfg.get("num_epochs"),
+        "freeze_enabled": bool(freeze_cfg.get("enabled", False)),
+        "freeze_warmup_epochs": int(freeze_cfg.get("warmup_epochs", 0)),
+        "freeze_warmup_target": str(freeze_cfg.get("warmup_freeze", "none")).lower(),
+        "freeze_post_warmup": str(freeze_cfg.get("post_warmup", "full_unfreeze")).lower(),
         "val_oos_wer": metrics["val_oos_wer"],
         "val_oos_cer": metrics["val_oos_cer"],
         "val_is_wer": metrics["val_is_wer"],

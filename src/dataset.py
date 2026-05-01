@@ -11,6 +11,103 @@ import numpy as np
 import tensorflow as tf
 from src.utils import FRAME_HEIGHT, FRAME_WIDTH, MAX_FRAMES, parse_alignment_chars
 
+AUGMENTATION_PROFILES = ("off", "spatial", "spatiotemporal", "strong")
+
+
+def _apply_gaussian_blur(frames: tf.Tensor) -> tf.Tensor:
+    """Apply a tiny 3x3 Gaussian blur independently to each frame."""
+    kernel = tf.constant(
+        [[1.0, 2.0, 1.0], [2.0, 4.0, 2.0], [1.0, 2.0, 1.0]],
+        dtype=tf.float32,
+    )
+    kernel = kernel / tf.reduce_sum(kernel)
+    kernel = tf.reshape(kernel, [3, 3, 1, 1])
+    return tf.nn.depthwise_conv2d(
+        frames,
+        filter=kernel,
+        strides=[1, 1, 1, 1],
+        padding="SAME",
+    )
+
+
+def _apply_spatial_augment(frames: tf.Tensor) -> tf.Tensor:
+    """Conservative spatial + photometric perturbations."""
+    scale = tf.random.uniform([], minval=0.95, maxval=1.05, dtype=tf.float32)
+    scaled_h = tf.cast(tf.round(scale * FRAME_HEIGHT), tf.int32)
+    scaled_w = tf.cast(tf.round(scale * FRAME_WIDTH), tf.int32)
+    frames = tf.image.resize(frames, [scaled_h, scaled_w], method="bilinear")
+    frames = tf.image.resize_with_crop_or_pad(frames, FRAME_HEIGHT, FRAME_WIDTH)
+
+    max_shift = 5
+    padded = tf.pad(
+        frames,
+        [[0, 0], [max_shift, max_shift], [max_shift, max_shift], [0, 0]],
+        mode="REFLECT",
+    )
+    offset_y = tf.random.uniform([], minval=0, maxval=(2 * max_shift) + 1, dtype=tf.int32)
+    offset_x = tf.random.uniform([], minval=0, maxval=(2 * max_shift) + 1, dtype=tf.int32)
+    frames = padded[:, offset_y:offset_y + FRAME_HEIGHT, offset_x:offset_x + FRAME_WIDTH, :]
+
+    frames = tf.image.random_brightness(frames, max_delta=0.06)
+    frames = tf.image.random_contrast(frames, lower=0.9, upper=1.1)
+    gamma = tf.random.uniform([], minval=0.95, maxval=1.05, dtype=tf.float32)
+    frames = tf.image.adjust_gamma(tf.maximum(frames, 1e-6), gamma=gamma)
+
+    noise = tf.random.normal(tf.shape(frames), mean=0.0, stddev=0.01, dtype=tf.float32)
+    frames = frames + noise
+
+    frames = tf.cond(
+        tf.random.uniform([], 0.0, 1.0) < 0.1,
+        lambda: _apply_gaussian_blur(frames),
+        lambda: frames,
+    )
+    return tf.clip_by_value(frames, 0.0, 1.0)
+
+
+def _apply_temporal_shift(frames: tf.Tensor) -> tf.Tensor:
+    """Length-preserving temporal shift with edge padding."""
+    shift = tf.random.uniform([], minval=-3, maxval=4, dtype=tf.int32)
+    shifted = tf.roll(frames, shift=shift, axis=0)
+
+    t = tf.range(MAX_FRAMES)
+    front_mask = tf.logical_and(shift > 0, t < shift)
+    back_mask = tf.logical_and(shift < 0, t >= (MAX_FRAMES + shift))
+    first_frame = tf.repeat(frames[:1], repeats=MAX_FRAMES, axis=0)
+    last_frame = tf.repeat(frames[-1:], repeats=MAX_FRAMES, axis=0)
+    shifted = tf.where(front_mask[:, tf.newaxis, tf.newaxis, tf.newaxis], first_frame, shifted)
+    shifted = tf.where(back_mask[:, tf.newaxis, tf.newaxis, tf.newaxis], last_frame, shifted)
+    return shifted
+
+
+def _apply_temporal_dropout_repeat(frames: tf.Tensor) -> tf.Tensor:
+    """Drop frames by replacing with previous frame, preserving length."""
+    drop_prob = tf.random.uniform([], minval=0.02, maxval=0.05, dtype=tf.float32)
+    drop_mask = tf.random.uniform([MAX_FRAMES], 0.0, 1.0) < drop_prob
+    previous = tf.concat([frames[:1], frames[:-1]], axis=0)
+    return tf.where(drop_mask[:, tf.newaxis, tf.newaxis, tf.newaxis], previous, frames)
+
+
+def _apply_temporal_time_mask(frames: tf.Tensor) -> tf.Tensor:
+    """Mask 2-6 consecutive frames to improve temporal robustness."""
+    mask_len = tf.random.uniform([], minval=2, maxval=7, dtype=tf.int32)
+    max_start = MAX_FRAMES - mask_len + 1
+    start = tf.random.uniform([], minval=0, maxval=max_start, dtype=tf.int32)
+    t = tf.range(MAX_FRAMES)
+    mask = tf.logical_and(t >= start, t < (start + mask_len))
+    return tf.where(
+        mask[:, tf.newaxis, tf.newaxis, tf.newaxis],
+        tf.zeros_like(frames),
+        frames,
+    )
+
+
+def _apply_temporal_augment(frames: tf.Tensor) -> tf.Tensor:
+    """Apply conservative temporal augmentations while preserving T=MAX_FRAMES."""
+    frames = _apply_temporal_shift(frames)
+    frames = _apply_temporal_dropout_repeat(frames)
+    frames = _apply_temporal_time_mask(frames)
+    return frames
+
 # ---------------------------------------------------------------------------
 # Sample discovery
 # ---------------------------------------------------------------------------
@@ -124,6 +221,8 @@ def create_ctc_dataset(
     label_lengths: np.ndarray,
     batch_size: int,
     shuffle: bool = True,
+    training: bool = False,
+    augmentation_profile: str = "off",
 ) -> tf.data.Dataset:
     """
     Creates a high-performance tf.data.Dataset for CTC training.
@@ -137,10 +236,20 @@ def create_ctc_dataset(
         label_lengths: 1D array of shape (N,) containing the true length of each sentence.
         batch_size: Number of samples per training batch.
         shuffle: Whether to shuffle the data at the start of each epoch.
+        training: Whether this dataset is used for training.
+        augmentation_profile: Augmentation level: off|spatial|spatiotemporal|strong.
 
     Returns:
         A tf.data.Dataset yielding (frames, label_dict) batches.
     """
+    augmentation_profile = augmentation_profile.lower().strip()
+    if augmentation_profile not in AUGMENTATION_PROFILES:
+        raise ValueError(
+            f"Unsupported augmentation_profile='{augmentation_profile}'. "
+            f"Supported: {AUGMENTATION_PROFILES}"
+        )
+    active_profile = augmentation_profile if training else "off"
+
     # 1. Create a dataset of indices or paths
     dataset = tf.data.Dataset.from_tensor_slices(
         (npy_paths, char_labels, label_lengths)
@@ -178,6 +287,12 @@ def create_ctc_dataset(
         # Re-set shapes (tf.py_function loses them)
         frames.set_shape((MAX_FRAMES, FRAME_HEIGHT, FRAME_WIDTH, 1))
 
+        if active_profile in {"spatial", "spatiotemporal", "strong"}:
+            frames = _apply_spatial_augment(frames)
+        if active_profile in {"spatiotemporal", "strong"}:
+            frames = _apply_temporal_augment(frames)
+        frames.set_shape((MAX_FRAMES, FRAME_HEIGHT, FRAME_WIDTH, 1))
+
         return frames, {"labels": label, "label_length": length}
 
     # 3. USE PARALLEL CALLS HERE!
@@ -202,6 +317,7 @@ def create_dataset_pipeline(
     batch_size: int,
     train_split: str = "train",
     val_split: str = "val_oos",
+    train_augmentation_profile: str = "off",
 ) -> tuple[
     tf.data.Dataset,
     tf.data.Dataset,
@@ -214,6 +330,14 @@ def create_dataset_pipeline(
 ]:
     """
     Build train/validation tf.data pipelines for CTC training using hard split manifests.
+
+    Args:
+        preprocessed_dir: Root directory containing .npy samples and align/ labels.
+        split_dir: Directory with split manifest txt files.
+        batch_size: Number of samples per batch.
+        train_split: Split key for training IDs.
+        val_split: Split key for validation IDs.
+        train_augmentation_profile: Train-time augmentation profile.
 
     Returns:
         train_ds, val_ds,
@@ -235,10 +359,22 @@ def create_dataset_pipeline(
     print(f"[Dataset] Train: {len(train_paths)} | Val: {len(val_paths)}")
 
     train_ds = create_ctc_dataset(
-        train_paths, train_labels, train_lengths, batch_size, shuffle=True
+        train_paths,
+        train_labels,
+        train_lengths,
+        batch_size,
+        shuffle=True,
+        training=True,
+        augmentation_profile=train_augmentation_profile,
     )
     val_ds = create_ctc_dataset(
-        val_paths, val_labels, val_lengths, batch_size, shuffle=False
+        val_paths,
+        val_labels,
+        val_lengths,
+        batch_size,
+        shuffle=False,
+        training=False,
+        augmentation_profile="off",
     )
 
     return (

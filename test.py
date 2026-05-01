@@ -189,7 +189,13 @@ def run_evaluation():
 
             paths, labels, lengths = build_split_arrays(preprocessed_dir, sample_ids)
             split_ds = create_ctc_dataset(
-                paths, labels, lengths, batch_size=batch_size, shuffle=False
+                paths,
+                labels,
+                lengths,
+                batch_size=batch_size,
+                shuffle=False,
+                training=False,
+                augmentation_profile="off",
             )
             num_steps = math.ceil(len(paths) / batch_size)
             wer, cer, count = evaluate_split(
