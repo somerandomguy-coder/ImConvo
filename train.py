@@ -51,13 +51,13 @@ CONFIG = {
     "num_epochs": 100,
     "learning_rate": 3e-4,
     "weight_decay": 1e-4,
-    "patience": 12,
+    "patience": 9,
     "seed": 42,
     "resume_from_best_checkpoint": True,
     "model_variant": "bigru",
     "freeze_config": {
         "enabled": True,
-        "warmup_epochs": 10,
+        "warmup_epochs": 7,
         "warmup_freeze": "frontend",  # none|frontend|backbone|frontend_backbone
         "post_warmup": "full_unfreeze",
     },
