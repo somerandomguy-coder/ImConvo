@@ -31,6 +31,7 @@ from src import (
     count_parameters,
 )
 from src.dataset import (
+    AUGMENTATION_PROFILES,
     build_split_arrays,
     create_ctc_dataset,
     create_dataset_pipeline,
@@ -53,11 +54,12 @@ CONFIG = {
     "weight_decay": 1e-4,
     "patience": 9,
     "seed": 42,
-    "resume_from_best_checkpoint": True,
+    "resume_from_best_checkpoint": False,
     "model_variant": "bigru",
+    "augmentation_profile": "off",  # off|spatial|spatiotemporal|strong
     "freeze_config": {
-        "enabled": True,
-        "warmup_epochs": 7,
+        "enabled": False,
+        "warmup_epochs": 0,
         "warmup_freeze": "frontend",  # none|frontend|backbone|frontend_backbone
         "post_warmup": "full_unfreeze",
     },
@@ -82,6 +84,12 @@ def parse_args():
         choices=MODEL_VARIANTS,
         default=None,
         help="Temporal backbone variant override",
+    )
+    parser.add_argument(
+        "--augmentation-profile",
+        choices=AUGMENTATION_PROFILES,
+        default=None,
+        help="Train-time augmentation profile",
     )
     return parser.parse_args()
 
@@ -312,10 +320,19 @@ def main():
     global task
     args = parse_args()
     model_variant = (args.model_variant or CONFIG["model_variant"]).lower() # ("bigru", "gru", "bilstm", "transformer")
+    augmentation_profile = (
+        args.augmentation_profile or str(CONFIG.get("augmentation_profile", "off"))
+    ).lower()
     if model_variant not in MODEL_VARIANTS:
         raise ValueError(
             f"Unsupported model variant '{model_variant}'. Supported: {MODEL_VARIANTS}"
         )
+    if augmentation_profile not in AUGMENTATION_PROFILES:
+        raise ValueError(
+            f"Unsupported augmentation profile '{augmentation_profile}'. "
+            f"Supported: {AUGMENTATION_PROFILES}"
+        )
+    feature_time_masking = augmentation_profile == "strong"
 
     tf.random.set_seed(CONFIG["seed"])
     np.random.seed(CONFIG["seed"])
@@ -323,10 +340,12 @@ def main():
     print(f"TensorFlow version: {tf.__version__}")
     print(f"GPUs available: {tf.config.list_physical_devices('GPU')}")
     print(f"Model variant: {model_variant}")
+    print(f"Augmentation profile: {augmentation_profile}")
+    print(f"Feature-time masking: {feature_time_masking}")
 
     task = Task.init(
         project_name="ImConvo",
-        task_name=f"LipReadingCTC_Training_{model_variant}",
+        task_name=f"LipReadingCTC_Training_{model_variant}_{augmentation_profile}",
         task_type=Task.TaskTypes.training,
     )
     run_started_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
@@ -364,6 +383,7 @@ def main():
         batch_size=CONFIG["batch_size"],
         train_split="train",
         val_split="val_oos",
+        train_augmentation_profile=augmentation_profile,
     )
 
     # Compute steps from known hard-split sizes
@@ -373,7 +393,11 @@ def main():
     validation_steps = math.ceil(num_val_samples / CONFIG["batch_size"])
 
     # ---- Build model ----
-    model = build_lipreading_ctc(model_variant=model_variant, num_chars=NUM_CHARS)
+    model = build_lipreading_ctc(
+        model_variant=model_variant,
+        num_chars=NUM_CHARS,
+        feature_time_masking=feature_time_masking,
+    )
 
     # Build model by running a forward pass
     for batch in train_ds.take(1):
@@ -562,6 +586,8 @@ def main():
             val_is_lengths,
             CONFIG["batch_size"],
             shuffle=False,
+            training=False,
+            augmentation_profile="off",
         )
         val_is_steps = math.ceil(len(val_is_paths) / CONFIG["batch_size"])
         val_is_wer, val_is_cer, _ = evaluate_split(
@@ -608,6 +634,8 @@ def main():
             "started_at": run_started_at,
             "ended_at": run_ended_at,
             "model_variant": model_variant,
+            "augmentation_profile": augmentation_profile,
+            "feature_time_masking": feature_time_masking,
             "checkpoint_path": best_checkpoint_path,
             "history": merged_history,
             "freeze": freeze_meta,
@@ -623,6 +651,10 @@ def main():
         for key, values in merged_history.items():
             if isinstance(values, list):
                 container[key] = values
+        container["augmentation"] = {
+            "profile": augmentation_profile,
+            "feature_time_masking": feature_time_masking,
+        }
         container["freeze"] = freeze_meta
         container["eval"] = eval_meta
         container["last_run_id"] = run_id
@@ -641,6 +673,10 @@ def main():
             )
 
     history_data = merged_history
+    history_data["augmentation"] = {
+        "profile": augmentation_profile,
+        "feature_time_masking": feature_time_masking,
+    }
     history_data["freeze"] = {
         "enabled": freeze_enabled,
         "warmup_epochs": int(freeze_cfg.get("warmup_epochs", 0)),

@@ -55,7 +55,13 @@ class LipReadingCTC(Model):
     Output: (batch, T=75, num_chars)
     """
 
-    def __init__(self, num_chars: int = NUM_CHARS, model_variant: str = "bigru", **kwargs):
+    def __init__(
+        self,
+        num_chars: int = NUM_CHARS,
+        model_variant: str = "bigru",
+        feature_time_masking: bool = False,
+        **kwargs,
+    ):
         super().__init__(name="LipReadingCTC", **kwargs)
         model_variant = model_variant.lower()
         if model_variant not in MODEL_VARIANTS:
@@ -66,6 +72,7 @@ class LipReadingCTC(Model):
 
         self.num_chars = num_chars
         self.model_variant = model_variant
+        self.feature_time_masking = bool(feature_time_masking)
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
 
         # 3D CNN front-end
@@ -202,12 +209,34 @@ class LipReadingCTC(Model):
             self.char_output,
         ]
 
+    def _apply_feature_time_mask(self, x: tf.Tensor) -> tf.Tensor:
+        """Mask 2-6 contiguous timesteps across all feature dimensions."""
+        batch_size = tf.shape(x)[0]
+        mask_len = tf.random.uniform([batch_size], minval=2, maxval=7, dtype=tf.int32)
+        max_start = MAX_FRAMES - mask_len + 1
+        start = tf.cast(
+            tf.random.uniform([batch_size], 0.0, 1.0) * tf.cast(max_start, tf.float32),
+            tf.int32,
+        )
+        time_idx = tf.range(MAX_FRAMES)[tf.newaxis, :]
+        mask = tf.logical_and(
+            time_idx >= start[:, tf.newaxis],
+            time_idx < (start + mask_len)[:, tf.newaxis],
+        )
+        return tf.where(mask[:, :, tf.newaxis], tf.zeros_like(x), x)
+
     def call(self, inputs, training=False):
         x = self.pool1(self.relu1(self.bn1(self.conv1(inputs), training=training)))
         x = self.pool2(self.relu2(self.bn2(self.conv2(x), training=training)))
         x = self.pool3(self.relu3(self.bn3(self.conv3(x), training=training)))
 
         x = self.time_flatten(x)
+        if self.feature_time_masking and training:
+            x = tf.cond(
+                tf.random.uniform([], 0.0, 1.0) < 0.5,
+                lambda: self._apply_feature_time_mask(x),
+                lambda: x,
+            )
         x = self._apply_temporal_backbone(x, training=training)
 
         x = self.char_dense(x)
@@ -275,13 +304,27 @@ class LipReadingCTC(Model):
 
     def get_config(self):
         config = super().get_config()
-        config.update({"num_chars": self.num_chars, "model_variant": self.model_variant})
+        config.update(
+            {
+                "num_chars": self.num_chars,
+                "model_variant": self.model_variant,
+                "feature_time_masking": self.feature_time_masking,
+            }
+        )
         return config
 
 
-def build_lipreading_ctc(model_variant: str, num_chars: int = NUM_CHARS) -> LipReadingCTC:
+def build_lipreading_ctc(
+    model_variant: str,
+    num_chars: int = NUM_CHARS,
+    feature_time_masking: bool = False,
+) -> LipReadingCTC:
     """Factory for lipreading CTC model variants."""
-    return LipReadingCTC(num_chars=num_chars, model_variant=model_variant)
+    return LipReadingCTC(
+        num_chars=num_chars,
+        model_variant=model_variant,
+        feature_time_masking=feature_time_masking,
+    )
 
 
 class LegacyLipReadingCTC(Model):
