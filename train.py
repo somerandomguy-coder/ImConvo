@@ -59,7 +59,7 @@ CONFIG = {
     "augmentation_profile": "off",  # off|spatial|spatiotemporal|strong
     "freeze_config": {
         "enabled": False,
-        "warmup_epochs": 10,
+        "warmup_epochs": 0,
         "warmup_freeze": "frontend",  # none|frontend|backbone|frontend_backbone
         "post_warmup": "full_unfreeze",
     },
