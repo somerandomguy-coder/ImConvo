@@ -89,7 +89,7 @@ def main():
 
     # Setup directories
     os.makedirs(args.output_dir, exist_ok=True)
-    align_output_dir = os.path.join(os.path.dirname(args.output_dir.rstrip('/')), "align")
+    align_output_dir = os.path.join(args.output_dir.rstrip('/'), "align")
     os.makedirs(align_output_dir, exist_ok=True)
 
     samples = discover_video_samples(args.data_dir)

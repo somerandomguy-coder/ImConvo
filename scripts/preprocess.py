@@ -84,8 +84,9 @@ def preprocess_dataset(data_dir: str, output_dir: str, force: bool = False):
         print("[ERROR] No video samples found. Check your data directory layout.")
         return
 
-    # Also copy alignment files into a single flat align/ directory alongside output
-    align_output_dir = os.path.join(os.path.dirname(output_dir), "align")
+    # Copy alignment files into output_dir/align so training can resolve
+    # preprocessed_dir/align/<sample_id>.align consistently.
+    align_output_dir = os.path.join(output_dir, "align")
     os.makedirs(align_output_dir, exist_ok=True)
 
     valid_names = []
