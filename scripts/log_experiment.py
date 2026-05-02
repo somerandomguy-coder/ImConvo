@@ -134,6 +134,19 @@ def extract_latest_training_run() -> dict:
     return latest if isinstance(latest, dict) else {}
 
 
+def resolve_setting(
+    cli_value: str | None,
+    latest_run_value: str | None,
+    default_value: str,
+) -> str:
+    """Resolve setting priority: CLI override > latest run metadata > defaults."""
+    if cli_value:
+        return str(cli_value).lower()
+    if latest_run_value:
+        return str(latest_run_value).lower()
+    return str(default_value).lower()
+
+
 def make_run_id(branch: str, model_variant: str, split_version: str) -> str:
     date_str = datetime.now().strftime("%Y-%m-%d")
     compact_model = re.sub(r"[^a-zA-Z0-9]+", "-", model_variant.lower()).strip("-")
@@ -184,10 +197,40 @@ def main() -> None:
     freeze_cfg = cfg.get("freeze_config") if isinstance(cfg.get("freeze_config"), dict) else {}
 
     model_variant = (args.model_variant or str(cfg.get("model_variant") or "bigru")).lower()
-    augmentation_profile = (
-        args.augmentation_profile
-        or str(cfg.get("augmentation_profile") or "off")
-    ).lower()
+    latest_model_variant = latest_run.get("model_variant")
+    latest_augmentation_profile = latest_run.get("augmentation_profile")
+
+    default_model_variant = str(cfg.get("model_variant") or "bigru")
+    default_augmentation_profile = str(cfg.get("augmentation_profile") or "off")
+
+    model_variant = resolve_setting(
+        cli_value=args.model_variant,
+        latest_run_value=latest_model_variant,
+        default_value=default_model_variant,
+    )
+    augmentation_profile = resolve_setting(
+        cli_value=args.augmentation_profile,
+        latest_run_value=latest_augmentation_profile,
+        default_value=default_augmentation_profile,
+    )
+
+    if latest_model_variant and latest_model_variant != default_model_variant:
+        print(
+            "[WARN] model_variant mismatch: "
+            f"train.py default='{default_model_variant}' vs "
+            f"latest_run='{latest_model_variant}'. "
+            "Using resolved priority (CLI > latest run > default)."
+        )
+    if (
+        latest_augmentation_profile
+        and latest_augmentation_profile != default_augmentation_profile
+    ):
+        print(
+            "[WARN] augmentation_profile mismatch: "
+            f"train.py default='{default_augmentation_profile}' vs "
+            f"latest_run='{latest_augmentation_profile}'. "
+            "Using resolved priority (CLI > latest run > default)."
+        )
 
     run_id = args.run_id or make_run_id(
         branch=branch,
