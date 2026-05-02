@@ -151,6 +151,12 @@ def main() -> None:
         help="Model variant label override for tracking",
     )
     parser.add_argument(
+        "--augmentation-profile",
+        choices=["off", "spatial", "spatiotemporal", "strong"],
+        default=None,
+        help="Augmentation profile override for tracking",
+    )
+    parser.add_argument(
         "--notes",
         default="Auto-logged from local artifacts.",
         help="Free-text notes",
@@ -176,15 +182,11 @@ def main() -> None:
     split_dir = str(cfg.get("split_dir") or "./splits/grid_v1")
     split_version = Path(split_dir).name if split_dir else "unknown_split"
     freeze_cfg = cfg.get("freeze_config") if isinstance(cfg.get("freeze_config"), dict) else {}
-    if isinstance(latest_run.get("freeze"), dict):
-        freeze_cfg = latest_run["freeze"]
 
-    model_variant = (
-        args.model_variant
-        or str(latest_run.get("model_variant") or cfg.get("model_variant") or "bigru")
-    ).lower()
-    augmentation_profile = str(
-        latest_run.get("augmentation_profile") or cfg.get("augmentation_profile") or "off"
+    model_variant = (args.model_variant or str(cfg.get("model_variant") or "bigru")).lower()
+    augmentation_profile = (
+        args.augmentation_profile
+        or str(cfg.get("augmentation_profile") or "off")
     ).lower()
 
     run_id = args.run_id or make_run_id(
@@ -206,6 +208,8 @@ def main() -> None:
         "val_oos_split": "val_oos",
         "model_variant": model_variant,
         "augmentation_profile": augmentation_profile,
+        "feature_time_masking": augmentation_profile == "strong",
+        "freeze_enabled": bool(freeze_cfg.get("enabled", False)),
         "feature_time_masking": augmentation_profile == "strong",
         "decoder": "ctc_greedy",
         "batch_size": cfg.get("batch_size"),
