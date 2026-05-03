@@ -150,14 +150,20 @@ def _get_or_load_model(model_path: str) -> LipReadingCTC:
 
     def infer_variant_from_path(path: str) -> str:
         stem = Path(path).stem.lower()
+        if stem.endswith("_transformer_medium"):
+            return "transformer_medium"
+        if stem.endswith("_conformer_lite"):
+            return "conformer_lite"
+        if stem.endswith("_tcn"):
+            return "tcn"
         if stem.endswith("_bilstm"):
             return "bilstm"
-        if stem.endswith("_gru"):
-            return "gru"
-        if stem.endswith("_transformer"):
-            return "transformer"
         if stem.endswith("_bigru"):
             return "bigru"
+        if stem.endswith("_transformer"):
+            return "transformer"
+        if stem.endswith("_gru"):
+            return "gru"
         # Legacy default checkpoint name maps to baseline BiGRU.
         return "bigru"
 
