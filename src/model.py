@@ -74,11 +74,12 @@ class TemporalConvBlock(layers.Layer):
             filters=channels,
             kernel_size=kernel_size,
             dilation_rate=dilation_rate,
-            padding="causal",
+            padding="same",
         )
         self.norm = layers.BatchNormalization()
         self.relu = layers.ReLU()
         self.dropout = layers.Dropout(dropout)
+        self.out_norm = layers.LayerNormalization(epsilon=1e-6)
         self.residual_proj = None
 
     def build(self, input_shape):
@@ -94,7 +95,7 @@ class TemporalConvBlock(layers.Layer):
         out = self.norm(out, training=training)
         out = self.relu(out)
         out = self.dropout(out, training=training)
-        return residual + out
+        return self.out_norm(residual + out)
 
 
 class ConformerBlock(layers.Layer):
@@ -126,10 +127,11 @@ class ConformerBlock(layers.Layer):
 
         self.conv_norm = layers.LayerNormalization(epsilon=1e-6)
         self.conv_pw1 = layers.Conv1D(2 * d_model, kernel_size=1, padding="same")
-        self.conv_dw = layers.SeparableConv1D(
+        self.conv_dw = layers.Conv1D(
             filters=d_model,
             kernel_size=conv_kernel_size,
             padding="same",
+            groups=d_model,
         )
         self.conv_bn = layers.BatchNormalization()
         self.conv_act = layers.Activation("swish")
@@ -159,8 +161,9 @@ class ConformerBlock(layers.Layer):
             self.ffn1_drop2,
             training=training,
         )
-
-        attn_out = self.attn(self.attn_norm(x), self.attn_norm(x), training=training)
+        
+        y = self.attn_norm(x)
+        attn_out = self.attn(y, y, training=training)
         attn_out = self.attn_drop(attn_out, training=training)
         x = x + attn_out
 
@@ -199,6 +202,8 @@ class LipReadingCTC(Model):
         num_chars: int = NUM_CHARS,
         model_variant: str = "bigru",
         feature_time_masking: bool = False,
+        backbone_dropout: float = 0.3,
+        head_dropout: float = 0.3,
         **kwargs,
     ):
         super().__init__(name="LipReadingCTC", **kwargs)
@@ -212,6 +217,8 @@ class LipReadingCTC(Model):
         self.num_chars = num_chars
         self.model_variant = model_variant
         self.feature_time_masking = bool(feature_time_masking)
+        self.backbone_dropout = float(backbone_dropout)
+        self.head_dropout = float(head_dropout)
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
 
         # 3D CNN front-end
@@ -234,46 +241,46 @@ class LipReadingCTC(Model):
 
         # Temporal backbone blocks (only one path used in call)
         self.temporal_bigru1 = layers.Bidirectional(
-            layers.GRU(256, return_sequences=True, dropout=0.3),
+            layers.GRU(256, return_sequences=True, dropout=self.backbone_dropout),
             name="temporal_bigru1",
         )
         self.temporal_bigru2 = layers.Bidirectional(
-            layers.GRU(256, return_sequences=True, dropout=0.3),
+            layers.GRU(256, return_sequences=True, dropout=self.backbone_dropout),
             name="temporal_bigru2",
         )
 
         self.temporal_gru1 = layers.GRU(
-            512, return_sequences=True, dropout=0.3, name="temporal_gru1"
+            512, return_sequences=True, dropout=self.backbone_dropout, name="temporal_gru1"
         )
         self.temporal_gru2 = layers.GRU(
-            512, return_sequences=True, dropout=0.3, name="temporal_gru2"
+            512, return_sequences=True, dropout=self.backbone_dropout, name="temporal_gru2"
         )
 
         self.temporal_bilstm1 = layers.Bidirectional(
-            layers.LSTM(256, return_sequences=True, dropout=0.3),
+            layers.LSTM(256, return_sequences=True, dropout=self.backbone_dropout),
             name="temporal_bilstm1",
         )
         self.temporal_bilstm2 = layers.Bidirectional(
-            layers.LSTM(256, return_sequences=True, dropout=0.3),
+            layers.LSTM(256, return_sequences=True, dropout=self.backbone_dropout),
             name="temporal_bilstm2",
         )
 
         # Transformer (small baseline)
         self.transformer_proj = layers.Dense(256, name="transformer_proj")
         self.transformer_pos_embed = layers.Embedding(MAX_FRAMES, 256, name="transformer_pos_embed")
-        self.transformer_drop = layers.Dropout(0.3)
+        self.transformer_drop = layers.Dropout(self.backbone_dropout)
         self.transformer_block1 = TransformerEncoderBlock(
             d_model=256,
             num_heads=4,
             ff_dim=512,
-            dropout=0.3,
+            dropout=self.backbone_dropout,
             name="transformer_block1",
         )
         self.transformer_block2 = TransformerEncoderBlock(
             d_model=256,
             num_heads=4,
             ff_dim=512,
-            dropout=0.3,
+            dropout=self.backbone_dropout,
             name="transformer_block2",
         )
 
@@ -284,7 +291,7 @@ class LipReadingCTC(Model):
                 channels=384,
                 kernel_size=5,
                 dilation_rate=dilation,
-                dropout=0.3,
+                dropout=self.backbone_dropout,
                 name=f"tcn_block_d{dilation}",
             )
             for dilation in (1, 2, 4, 8)
@@ -297,14 +304,14 @@ class LipReadingCTC(Model):
             256,
             name="conformer_pos_embed",
         )
-        self.conformer_drop = layers.Dropout(0.3)
+        self.conformer_drop = layers.Dropout(self.backbone_dropout)
         self.conformer_blocks = [
             ConformerBlock(
                 d_model=256,
                 num_heads=4,
                 ff_multiplier=4,
                 conv_kernel_size=15,
-                dropout=0.3,
+                dropout=self.backbone_dropout,
                 name=f"conformer_block{i + 1}",
             )
             for i in range(3)
@@ -317,13 +324,13 @@ class LipReadingCTC(Model):
             384,
             name="transformer_medium_pos_embed",
         )
-        self.transformer_medium_drop = layers.Dropout(0.3)
+        self.transformer_medium_drop = layers.Dropout(self.backbone_dropout)
         self.transformer_medium_blocks = [
             TransformerEncoderBlock(
                 d_model=384,
                 num_heads=4,
                 ff_dim=768,
-                dropout=0.3,
+                dropout=self.backbone_dropout,
                 name=f"transformer_medium_block{i + 1}",
             )
             for i in range(4)
@@ -331,7 +338,7 @@ class LipReadingCTC(Model):
 
         # Per-frame character output
         self.char_dense = layers.Dense(128, activation="relu")
-        self.char_dropout = layers.Dropout(0.3)
+        self.char_dropout = layers.Dropout(self.head_dropout)
         self.char_output = layers.Dense(num_chars, activation=None, name="char_logits")
 
     def _add_positional_embedding(
@@ -537,6 +544,8 @@ class LipReadingCTC(Model):
                 "num_chars": self.num_chars,
                 "model_variant": self.model_variant,
                 "feature_time_masking": self.feature_time_masking,
+                "backbone_dropout": self.backbone_dropout,
+                "head_dropout": self.head_dropout,
             }
         )
         return config
@@ -546,12 +555,16 @@ def build_lipreading_ctc(
     model_variant: str,
     num_chars: int = NUM_CHARS,
     feature_time_masking: bool = False,
+    backbone_dropout: float = 0.3,
+    head_dropout: float = 0.3,
 ) -> LipReadingCTC:
     """Factory for lipreading CTC model variants."""
     return LipReadingCTC(
         num_chars=num_chars,
         model_variant=model_variant,
         feature_time_masking=feature_time_masking,
+        backbone_dropout=backbone_dropout,
+        head_dropout=head_dropout,
     )
 
 

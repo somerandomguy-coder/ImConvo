@@ -8,6 +8,7 @@ Prerequisites:
 import os
 import sys
 import argparse
+import random
 
 if not hasattr(sys, 'real_prefix') and not (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
     print("\n[!] WARNING: You are not running in a virtual environment.")
@@ -54,6 +55,42 @@ CONFIG = {
     "weight_decay": 1e-4,
     "patience": 9,
     "seed": 42,
+    "model_config": {
+        "backbone_dropout": 0.3,
+        "head_dropout": 0.3,
+    },
+    "variant_model_config": {
+        "conformer_lite": {
+            "backbone_dropout": 0.2,
+            "head_dropout": 0.2,
+        },
+        "transformer_medium": {
+            "backbone_dropout": 0.2,
+            "head_dropout": 0.2,
+        },
+    },
+    "optimizer_config": {
+        "warmup_epochs": 0,
+        "scheduler": "reduce_on_plateau",  # none|reduce_on_plateau|cosine
+        "plateau_factor": 0.5,
+        "plateau_patience": 3,
+        "min_lr": 1e-6,
+        "cosine_alpha": 0.1,  # min lr ratio for cosine phase
+    },
+    "variant_optimizer_config": {
+        "conformer_lite": {
+            "learning_rate": 1e-4,
+            "warmup_epochs": 3,
+            "scheduler": "cosine",
+            "cosine_alpha": 0.1,
+        },
+        "transformer_medium": {
+            "learning_rate": 1e-4,
+            "warmup_epochs": 3,
+            "scheduler": "cosine",
+            "cosine_alpha": 0.1,
+        },
+    },
     "resume_from_best_checkpoint": False,
     "model_variant": "bigru",
     "augmentation_profile": "off",  # off|spatial|spatiotemporal|strong
@@ -97,10 +134,62 @@ def parse_args():
     return parser.parse_args()
 
 
-def build_optimizer() -> tf.keras.optimizers.Optimizer:
+def set_global_determinism(seed: int):
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    tf.keras.utils.set_random_seed(seed)
+    try:
+        tf.config.experimental.enable_op_determinism()
+    except Exception:
+        pass
+
+
+def _resolve_variant_model_config(model_variant: str) -> dict[str, float]:
+    base_cfg = dict(CONFIG.get("model_config", {}))
+    variant_cfg = dict(CONFIG.get("variant_model_config", {}).get(model_variant, {}))
+    base_cfg.update(variant_cfg)
+    return {
+        "backbone_dropout": float(base_cfg.get("backbone_dropout", 0.3)),
+        "head_dropout": float(base_cfg.get("head_dropout", 0.3)),
+    }
+
+
+def _resolve_variant_optimizer_config(model_variant: str) -> dict[str, float | int | str]:
+    cfg = {
+        "learning_rate": float(CONFIG["learning_rate"]),
+        "weight_decay": float(CONFIG["weight_decay"]),
+        "warmup_epochs": 0,
+        "scheduler": "reduce_on_plateau",
+        "plateau_factor": 0.5,
+        "plateau_patience": 3,
+        "min_lr": 1e-6,
+        "cosine_alpha": 0.1,
+    }
+    cfg.update(dict(CONFIG.get("optimizer_config", {})))
+    cfg.update(dict(CONFIG.get("variant_optimizer_config", {}).get(model_variant, {})))
+    cfg["learning_rate"] = float(cfg["learning_rate"])
+    cfg["weight_decay"] = float(cfg["weight_decay"])
+    cfg["warmup_epochs"] = int(cfg.get("warmup_epochs", 0))
+    cfg["scheduler"] = str(cfg.get("scheduler", "reduce_on_plateau")).lower()
+    cfg["plateau_factor"] = float(cfg.get("plateau_factor", 0.5))
+    cfg["plateau_patience"] = int(cfg.get("plateau_patience", 3))
+    cfg["min_lr"] = float(cfg.get("min_lr", 1e-6))
+    cfg["cosine_alpha"] = float(cfg.get("cosine_alpha", 0.1))
+    return cfg
+
+
+def _set_optimizer_lr(optimizer: tf.keras.optimizers.Optimizer, lr: float):
+    if hasattr(optimizer.learning_rate, "assign"):
+        optimizer.learning_rate.assign(lr)
+    else:
+        tf.keras.backend.set_value(optimizer.learning_rate, lr)
+
+
+def build_optimizer(opt_cfg: dict[str, float | int | str]) -> tf.keras.optimizers.Optimizer:
     return tf.keras.optimizers.AdamW(
-        learning_rate=CONFIG["learning_rate"],
-        weight_decay=CONFIG["weight_decay"],
+        learning_rate=float(opt_cfg["learning_rate"]),
+        weight_decay=float(opt_cfg["weight_decay"]),
     )
 
 
@@ -171,6 +260,66 @@ class EpochHistoryCollector(tf.keras.callbacks.Callback):
                 continue
             self.history.setdefault(key, [])
             self.history[key].append(val)
+
+
+class WarmupThenCosineCallback(tf.keras.callbacks.Callback):
+    """Linear warmup followed by cosine decay."""
+
+    def __init__(
+        self,
+        target_lr: float,
+        warmup_epochs: int,
+        total_epochs: int,
+        min_lr: float,
+    ):
+        super().__init__()
+        self.target_lr = float(target_lr)
+        self.warmup_epochs = max(0, int(warmup_epochs))
+        self.total_epochs = max(1, int(total_epochs))
+        self.min_lr = float(min_lr)
+
+    def on_epoch_begin(self, epoch, logs=None):
+        if self.warmup_epochs > 0 and epoch < self.warmup_epochs:
+            lr = self.target_lr * float(epoch + 1) / float(self.warmup_epochs)
+            _set_optimizer_lr(self.model.optimizer, lr)
+            return
+
+        decay_epochs = max(self.total_epochs - self.warmup_epochs, 1)
+        progress = min(max(epoch - self.warmup_epochs, 0), decay_epochs - 1) / max(decay_epochs - 1, 1)
+        cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
+        lr = self.min_lr + (self.target_lr - self.min_lr) * cosine
+        _set_optimizer_lr(self.model.optimizer, lr)
+
+
+class WarmupOnlyCallback(tf.keras.callbacks.Callback):
+    """Linear warmup to target lr, then keep lr unchanged."""
+
+    def __init__(self, target_lr: float, warmup_epochs: int):
+        super().__init__()
+        self.target_lr = float(target_lr)
+        self.warmup_epochs = max(0, int(warmup_epochs))
+
+    def on_epoch_begin(self, epoch, logs=None):
+        if self.warmup_epochs <= 0:
+            return
+        if epoch < self.warmup_epochs:
+            lr = self.target_lr * float(epoch + 1) / float(self.warmup_epochs)
+            _set_optimizer_lr(self.model.optimizer, lr)
+        elif epoch == self.warmup_epochs:
+            _set_optimizer_lr(self.model.optimizer, self.target_lr)
+
+
+class DelayedReduceLROnPlateau(tf.keras.callbacks.ReduceLROnPlateau):
+    """ReduceLROnPlateau that starts only after warmup."""
+
+    def __init__(self, warmup_epochs: int, **kwargs):
+        super().__init__(**kwargs)
+        self.warmup_epochs = max(0, int(warmup_epochs))
+
+    def on_epoch_end(self, epoch, logs=None):
+        if (epoch + 1) <= self.warmup_epochs:
+            return
+        super().on_epoch_end(epoch, logs)
 
 
 def load_history_container(path: str) -> dict:
@@ -336,15 +485,25 @@ def main():
             f"Supported: {AUGMENTATION_PROFILES}"
         )
     feature_time_masking = augmentation_profile == "strong"
-
-    tf.random.set_seed(CONFIG["seed"])
-    np.random.seed(CONFIG["seed"])
+    model_cfg = _resolve_variant_model_config(model_variant)
+    opt_cfg = _resolve_variant_optimizer_config(model_variant)
+    set_global_determinism(int(CONFIG["seed"]))
 
     print(f"TensorFlow version: {tf.__version__}")
     print(f"GPUs available: {tf.config.list_physical_devices('GPU')}")
     print(f"Model variant: {model_variant}")
     print(f"Augmentation profile: {augmentation_profile}")
     print(f"Feature-time masking: {feature_time_masking}")
+    print(
+        "Model config: "
+        f"backbone_dropout={model_cfg['backbone_dropout']}, "
+        f"head_dropout={model_cfg['head_dropout']}"
+    )
+    print(
+        "Optimizer config: "
+        f"lr={opt_cfg['learning_rate']}, wd={opt_cfg['weight_decay']}, "
+        f"warmup_epochs={opt_cfg['warmup_epochs']}, scheduler={opt_cfg['scheduler']}"
+    )
 
     task = Task.init(
         project_name="ImConvo",
@@ -384,6 +543,7 @@ def main():
         preprocessed_dir=CONFIG["preprocessed_dir"],
         split_dir=CONFIG["split_dir"],
         batch_size=CONFIG["batch_size"],
+        seed=int(CONFIG["seed"]),
         train_split="train",
         val_split="val_oos",
         train_augmentation_profile=augmentation_profile,
@@ -400,6 +560,8 @@ def main():
         model_variant=model_variant,
         num_chars=NUM_CHARS,
         feature_time_masking=feature_time_masking,
+        backbone_dropout=float(model_cfg["backbone_dropout"]),
+        head_dropout=float(model_cfg["head_dropout"]),
     )
 
     # Build model by running a forward pass
@@ -495,24 +657,68 @@ def main():
         print(f"[Freeze] Disabled ({summarize_freeze_state(model)})")
 
     # ---- Compile (loss handled in train_step) ----
-    optimizer = build_optimizer()
+    optimizer = build_optimizer(opt_cfg)
     model.compile(optimizer=optimizer)
 
     # ---- Callbacks ----
-    callbacks = [
-        EpochHistoryCollector(),
-        tf.keras.callbacks.ReduceLROnPlateau(
-            monitor="val_loss", factor=0.5, patience=3, min_lr=1e-6, verbose=1
-        ),
-        tf.keras.callbacks.EarlyStopping(
-            monitor="val_loss", patience=CONFIG["patience"],
-            restore_best_weights=True, verbose=1
-        ),
-        tf.keras.callbacks.ModelCheckpoint(
-            filepath=best_checkpoint_path,
-            monitor="val_loss", save_best_only=True, verbose=1,
-        ),
-    ]
+    callbacks: list[tf.keras.callbacks.Callback] = [EpochHistoryCollector()]
+    scheduler_mode = str(opt_cfg.get("scheduler", "reduce_on_plateau")).lower()
+    warmup_epochs_lr = max(0, int(opt_cfg.get("warmup_epochs", 0)))
+    if scheduler_mode == "cosine":
+        min_lr_ratio = float(opt_cfg.get("cosine_alpha", 0.1))
+        min_lr = max(float(opt_cfg.get("min_lr", 1e-6)), float(opt_cfg["learning_rate"]) * min_lr_ratio)
+        callbacks.append(
+            WarmupThenCosineCallback(
+                target_lr=float(opt_cfg["learning_rate"]),
+                warmup_epochs=warmup_epochs_lr,
+                total_epochs=int(CONFIG["num_epochs"]),
+                min_lr=min_lr,
+            )
+        )
+    elif scheduler_mode == "reduce_on_plateau":
+        if warmup_epochs_lr > 0:
+            callbacks.append(
+                WarmupOnlyCallback(
+                    target_lr=float(opt_cfg["learning_rate"]),
+                    warmup_epochs=warmup_epochs_lr,
+                )
+            )
+        callbacks.append(
+            DelayedReduceLROnPlateau(
+                warmup_epochs=warmup_epochs_lr,
+                monitor="val_loss",
+                factor=float(opt_cfg.get("plateau_factor", 0.5)),
+                patience=int(opt_cfg.get("plateau_patience", 3)),
+                min_lr=float(opt_cfg.get("min_lr", 1e-6)),
+                verbose=1,
+            )
+        )
+    elif scheduler_mode == "none":
+        if warmup_epochs_lr > 0:
+            callbacks.append(
+                WarmupOnlyCallback(
+                    target_lr=float(opt_cfg["learning_rate"]),
+                    warmup_epochs=warmup_epochs_lr,
+                )
+            )
+    else:
+        raise ValueError(
+            f"Unsupported optimizer scheduler '{scheduler_mode}'. "
+            "Supported: none|reduce_on_plateau|cosine"
+        )
+
+    callbacks.extend(
+        [
+            tf.keras.callbacks.EarlyStopping(
+                monitor="val_loss", patience=CONFIG["patience"],
+                restore_best_weights=True, verbose=1
+            ),
+            tf.keras.callbacks.ModelCheckpoint(
+                filepath=best_checkpoint_path,
+                monitor="val_loss", save_best_only=True, verbose=1,
+            ),
+        ]
+    )
     # ---- Train ----
     print(f"\n{'='*60}")
     print("Starting CTC Training")
@@ -550,7 +756,7 @@ def main():
 
             if post_mode == "full_unfreeze" and warmup_epochs < total_epochs:
                 apply_freeze_state(model, "none")
-                model.compile(optimizer=build_optimizer())
+                model.compile(optimizer=build_optimizer(opt_cfg))
                 print(
                     f"[Freeze] Phase 2 full unfreeze from epoch {warmup_epochs + 1} "
                     f"({summarize_freeze_state(model)})"
@@ -639,6 +845,8 @@ def main():
             "model_variant": model_variant,
             "augmentation_profile": augmentation_profile,
             "feature_time_masking": feature_time_masking,
+            "model_config": model_cfg,
+            "optimizer": opt_cfg,
             "checkpoint_path": best_checkpoint_path,
             "history": merged_history,
             "freeze": freeze_meta,
@@ -658,6 +866,8 @@ def main():
             "profile": augmentation_profile,
             "feature_time_masking": feature_time_masking,
         }
+        container["model_config"] = model_cfg
+        container["optimizer"] = opt_cfg
         container["freeze"] = freeze_meta
         container["eval"] = eval_meta
         container["last_run_id"] = run_id
@@ -680,6 +890,8 @@ def main():
         "profile": augmentation_profile,
         "feature_time_masking": feature_time_masking,
     }
+    history_data["model_config"] = model_cfg
+    history_data["optimizer"] = opt_cfg
     history_data["freeze"] = {
         "enabled": freeze_enabled,
         "warmup_epochs": int(freeze_cfg.get("warmup_epochs", 0)),

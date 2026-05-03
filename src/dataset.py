@@ -221,6 +221,7 @@ def create_ctc_dataset(
     label_lengths: np.ndarray,
     batch_size: int,
     shuffle: bool = True,
+    seed: int | None = None,
     training: bool = False,
     augmentation_profile: str = "off",
 ) -> tf.data.Dataset:
@@ -236,6 +237,7 @@ def create_ctc_dataset(
         label_lengths: 1D array of shape (N,) containing the true length of each sentence.
         batch_size: Number of samples per training batch.
         shuffle: Whether to shuffle the data at the start of each epoch.
+        seed: Shuffle seed for deterministic reproducibility.
         training: Whether this dataset is used for training.
         augmentation_profile: Augmentation level: off|spatial|spatiotemporal|strong.
 
@@ -256,7 +258,11 @@ def create_ctc_dataset(
     )
 
     if shuffle:
-        dataset = dataset.shuffle(len(npy_paths))
+        dataset = dataset.shuffle(
+            len(npy_paths),
+            seed=seed,
+            reshuffle_each_iteration=True,
+        )
 
     # 2. Define a loading function
     def load_npy_file(
@@ -315,6 +321,7 @@ def create_dataset_pipeline(
     preprocessed_dir: str,
     split_dir: str,
     batch_size: int,
+    seed: int | None = None,
     train_split: str = "train",
     val_split: str = "val_oos",
     train_augmentation_profile: str = "off",
@@ -335,6 +342,7 @@ def create_dataset_pipeline(
         preprocessed_dir: Root directory containing .npy samples and align/ labels.
         split_dir: Directory with split manifest txt files.
         batch_size: Number of samples per batch.
+        seed: Shuffle seed for training dataset.
         train_split: Split key for training IDs.
         val_split: Split key for validation IDs.
         train_augmentation_profile: Train-time augmentation profile.
@@ -364,6 +372,7 @@ def create_dataset_pipeline(
         train_lengths,
         batch_size,
         shuffle=True,
+        seed=seed,
         training=True,
         augmentation_profile=train_augmentation_profile,
     )
