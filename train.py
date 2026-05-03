@@ -70,6 +70,9 @@ VARIANT_CHECKPOINT_MAP = {
     "gru": "best_ctc_model_gru.keras",
     "bilstm": "best_ctc_model_bilstm.keras",
     "transformer": "best_ctc_model_transformer.keras",
+    "tcn": "best_ctc_model_tcn.keras",
+    "conformer_lite": "best_ctc_model_conformer_lite.keras",
+    "transformer_medium": "best_ctc_model_transformer_medium.keras",
 }
 
 LEGACY_BASELINE_CHECKPOINT = "best_ctc_model.keras"
@@ -319,7 +322,7 @@ def evaluate_split(
 def main():
     global task
     args = parse_args()
-    model_variant = (args.model_variant or CONFIG["model_variant"]).lower() # ("bigru", "gru", "bilstm", "transformer")
+    model_variant = (args.model_variant or CONFIG["model_variant"]).lower()
     augmentation_profile = (
         args.augmentation_profile or str(CONFIG.get("augmentation_profile", "off"))
     ).lower()

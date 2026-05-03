@@ -12,17 +12,97 @@ import tensorflow as tf
 import argparse
 
 # Your local imports
-from src import LipReadingCTC, char_indices_to_text
+from src import MODEL_VARIANTS, NUM_CHARS, build_lipreading_ctc, char_indices_to_text
 from src.utils import *
 
+DEFAULT_CHECKPOINT_PATH = "./checkpoints/best_ctc_model.keras"
 
 
 def get_args():
     parser = argparse.ArgumentParser(description="LipNet Real-time Inference")
-    parser.add_argument("--ip", type=str, required=False, default=None,
-                        help="IP Webcam URL (e.g., http://192.168.0.69:8080). "
-                             "If not provided, uses laptop webcam.")
+    parser.add_argument(
+        "--ip",
+        type=str,
+        required=False,
+        default=None,
+        help=(
+            "IP Webcam URL (e.g., http://192.168.0.69:8080). "
+            "If not provided, uses laptop webcam."
+        ),
+    )
+    parser.add_argument(
+        "--checkpoint-path",
+        type=str,
+        default=DEFAULT_CHECKPOINT_PATH,
+        help="Checkpoint path (.keras/.weights).",
+    )
+    parser.add_argument(
+        "--model-variant",
+        choices=MODEL_VARIANTS,
+        default=None,
+        help="Optional temporal backbone override. If omitted, infer from checkpoint name.",
+    )
     return parser.parse_args()
+
+
+def infer_variant_from_checkpoint_path(checkpoint_path: str) -> str:
+    stem = os.path.splitext(os.path.basename(checkpoint_path))[0].lower()
+    if stem.endswith("_transformer_medium"):
+        return "transformer_medium"
+    if stem.endswith("_conformer_lite"):
+        return "conformer_lite"
+    if stem.endswith("_tcn"):
+        return "tcn"
+    if stem.endswith("_bilstm"):
+        return "bilstm"
+    if stem.endswith("_bigru"):
+        return "bigru"
+    if stem.endswith("_transformer"):
+        return "transformer"
+    if stem.endswith("_gru"):
+        return "gru"
+    return "bigru"
+
+
+def load_model_for_inference(
+    checkpoint_path: str,
+    model_variant_override: str | None,
+):
+    inferred_variant = infer_variant_from_checkpoint_path(checkpoint_path)
+    if model_variant_override:
+        candidates = [model_variant_override.lower()]
+    else:
+        candidates = [inferred_variant]
+        if "bigru" not in candidates:
+            candidates.append("bigru")
+        candidates.extend([v for v in MODEL_VARIANTS if v not in candidates])
+
+    if not os.path.exists(checkpoint_path):
+        fallback_variant = candidates[0]
+        model = build_lipreading_ctc(model_variant=fallback_variant, num_chars=NUM_CHARS)
+        _ = model(np.random.randn(1, 75, 80, 120, 1).astype(np.float32))
+        print(f"[WARN] Checkpoint not found at {checkpoint_path}. Using random weights.")
+        print(f"[Info] Initialized variant='{fallback_variant}'.")
+        return model, fallback_variant
+
+    load_errors = []
+    for variant in candidates:
+        try:
+            model = build_lipreading_ctc(model_variant=variant, num_chars=NUM_CHARS)
+            _ = model(np.random.randn(1, 75, 80, 120, 1).astype(np.float32))
+            model.load_weights(checkpoint_path)
+            return model, variant
+        except Exception as exc:
+            load_errors.append(f"{variant}: {type(exc).__name__}: {exc}")
+            if model_variant_override:
+                break
+
+    joined = " | ".join(load_errors[:5]) if load_errors else "unknown"
+    raise RuntimeError(
+        "Failed to load checkpoint with available variants. "
+        f"Tried {candidates}. Errors: {joined}"
+    )
+
 
 def preprocess_frame(frame):
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -33,21 +113,26 @@ def preprocess_frame(frame):
 def main():
     args = get_args()
     if args.ip:
-        stream_url = args.ip if args.ip.endswith("/video") else f"{args.ip}/video"
-        video_source = stream_url
-        print("📱 Using IP Webcam stream:", video_source)
+        if args.ip.isdigit():
+            video_source = int(args.ip)
+            print("💻 Using camera index:", video_source)
+        else:
+            stream_url = args.ip if args.ip.endswith("/video") else f"{args.ip}/video"
+            video_source = stream_url
+            print("📱 Using IP Webcam stream:", video_source)
     else:
         video_source = 0
         print("💻 Using laptop webcam")
 
     # 1. Load Model
-    checkpoint_path = "./checkpoints/best_ctc_model.keras"
-    model = LipReadingCTC(num_chars=28)
-    # Warm up
-    _ = model(np.random.randn(1, 75, 80, 120, 1).astype(np.float32))
+    checkpoint_path = args.checkpoint_path
+    model, resolved_variant = load_model_for_inference(
+        checkpoint_path=checkpoint_path,
+        model_variant_override=args.model_variant,
+    )
+    print(f"[Info] Model variant: {resolved_variant}")
     if os.path.exists(checkpoint_path):
-        model.load_weights(checkpoint_path)
-        print("✓ Model weights loaded.")
+        print(f"✓ Model weights loaded from: {checkpoint_path}")
 
     # 2. Setup Video
     cap = cv2.VideoCapture(video_source)

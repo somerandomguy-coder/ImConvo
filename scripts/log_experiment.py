@@ -34,6 +34,9 @@ VARIANT_CHECKPOINT_MAP = {
     "gru": "best_ctc_model_gru.keras",
     "bilstm": "best_ctc_model_bilstm.keras",
     "transformer": "best_ctc_model_transformer.keras",
+    "tcn": "best_ctc_model_tcn.keras",
+    "conformer_lite": "best_ctc_model_conformer_lite.keras",
+    "transformer_medium": "best_ctc_model_transformer_medium.keras",
 }
 
 
@@ -159,7 +162,15 @@ def main() -> None:
     parser.add_argument("--run-id", default=None, help="Optional explicit run_id")
     parser.add_argument(
         "--model-variant",
-        choices=["bigru", "gru", "bilstm", "transformer"],
+        choices=[
+            "bigru",
+            "gru",
+            "bilstm",
+            "transformer",
+            "tcn",
+            "conformer_lite",
+            "transformer_medium",
+        ],
         default=None,
         help="Model variant label override for tracking",
     )

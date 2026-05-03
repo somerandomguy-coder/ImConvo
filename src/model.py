@@ -7,6 +7,9 @@ Supported temporal backbones:
 - gru (single-direction)
 - bilstm
 - transformer (small)
+- tcn
+- conformer_lite
+- transformer_medium
 """
 
 from __future__ import annotations
@@ -15,7 +18,15 @@ import tensorflow as tf
 from keras import Model, layers
 from src.utils import BLANK_IDX, MAX_FRAMES, NUM_CHARS
 
-MODEL_VARIANTS = ("bigru", "gru", "bilstm", "transformer")
+MODEL_VARIANTS = (
+    "bigru",
+    "gru",
+    "bilstm",
+    "transformer",
+    "tcn",
+    "conformer_lite",
+    "transformer_medium",
+)
 
 
 class TransformerEncoderBlock(layers.Layer):
@@ -45,6 +56,134 @@ class TransformerEncoderBlock(layers.Layer):
         ffn_out = self.ffn(x, training=training)
         ffn_out = self.dropout2(ffn_out, training=training)
         return self.norm2(x + ffn_out)
+
+
+class TemporalConvBlock(layers.Layer):
+    """Residual dilated temporal Conv1D block for TCN backbone."""
+
+    def __init__(
+        self,
+        channels: int,
+        kernel_size: int,
+        dilation_rate: int,
+        dropout: float,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.conv = layers.Conv1D(
+            filters=channels,
+            kernel_size=kernel_size,
+            dilation_rate=dilation_rate,
+            padding="causal",
+        )
+        self.norm = layers.BatchNormalization()
+        self.relu = layers.ReLU()
+        self.dropout = layers.Dropout(dropout)
+        self.residual_proj = None
+
+    def build(self, input_shape):
+        input_dim = int(input_shape[-1])
+        conv_dim = int(self.conv.filters)
+        if input_dim != conv_dim:
+            self.residual_proj = layers.Dense(conv_dim)
+        super().build(input_shape)
+
+    def call(self, x, training=False):
+        residual = x if self.residual_proj is None else self.residual_proj(x)
+        out = self.conv(x)
+        out = self.norm(out, training=training)
+        out = self.relu(out)
+        out = self.dropout(out, training=training)
+        return residual + out
+
+
+class ConformerBlock(layers.Layer):
+    """Conformer-lite block with FFN + MHSA + convolution module."""
+
+    def __init__(
+        self,
+        d_model: int,
+        num_heads: int,
+        ff_multiplier: int,
+        conv_kernel_size: int,
+        dropout: float,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        ff_dim = d_model * ff_multiplier
+        self.ffn1_norm = layers.LayerNormalization(epsilon=1e-6)
+        self.ffn1_dense1 = layers.Dense(ff_dim, activation="swish")
+        self.ffn1_drop1 = layers.Dropout(dropout)
+        self.ffn1_dense2 = layers.Dense(d_model)
+        self.ffn1_drop2 = layers.Dropout(dropout)
+
+        self.attn_norm = layers.LayerNormalization(epsilon=1e-6)
+        self.attn = layers.MultiHeadAttention(
+            num_heads=num_heads,
+            key_dim=d_model // num_heads,
+        )
+        self.attn_drop = layers.Dropout(dropout)
+
+        self.conv_norm = layers.LayerNormalization(epsilon=1e-6)
+        self.conv_pw1 = layers.Conv1D(2 * d_model, kernel_size=1, padding="same")
+        self.conv_dw = layers.SeparableConv1D(
+            filters=d_model,
+            kernel_size=conv_kernel_size,
+            padding="same",
+        )
+        self.conv_bn = layers.BatchNormalization()
+        self.conv_act = layers.Activation("swish")
+        self.conv_pw2 = layers.Conv1D(d_model, kernel_size=1, padding="same")
+        self.conv_drop = layers.Dropout(dropout)
+
+        self.ffn2_norm = layers.LayerNormalization(epsilon=1e-6)
+        self.ffn2_dense1 = layers.Dense(ff_dim, activation="swish")
+        self.ffn2_drop1 = layers.Dropout(dropout)
+        self.ffn2_dense2 = layers.Dense(d_model)
+        self.ffn2_drop2 = layers.Dropout(dropout)
+        self.final_norm = layers.LayerNormalization(epsilon=1e-6)
+
+    def _ffn(self, x, dense1, drop1, dense2, drop2, training=False):
+        out = dense1(x)
+        out = drop1(out, training=training)
+        out = dense2(out)
+        out = drop2(out, training=training)
+        return out
+
+    def call(self, x, training=False):
+        x = x + 0.5 * self._ffn(
+            self.ffn1_norm(x),
+            self.ffn1_dense1,
+            self.ffn1_drop1,
+            self.ffn1_dense2,
+            self.ffn1_drop2,
+            training=training,
+        )
+
+        attn_out = self.attn(self.attn_norm(x), self.attn_norm(x), training=training)
+        attn_out = self.attn_drop(attn_out, training=training)
+        x = x + attn_out
+
+        conv_x = self.conv_norm(x)
+        conv_x = self.conv_pw1(conv_x)
+        conv_left, conv_right = tf.split(conv_x, num_or_size_splits=2, axis=-1)
+        conv_x = conv_left * tf.nn.sigmoid(conv_right)
+        conv_x = self.conv_dw(conv_x)
+        conv_x = self.conv_bn(conv_x, training=training)
+        conv_x = self.conv_act(conv_x)
+        conv_x = self.conv_pw2(conv_x)
+        conv_x = self.conv_drop(conv_x, training=training)
+        x = x + conv_x
+
+        x = x + 0.5 * self._ffn(
+            self.ffn2_norm(x),
+            self.ffn2_dense1,
+            self.ffn2_drop1,
+            self.ffn2_dense2,
+            self.ffn2_drop2,
+            training=training,
+        )
+        return self.final_norm(x)
 
 
 class LipReadingCTC(Model):
@@ -138,10 +277,72 @@ class LipReadingCTC(Model):
             name="transformer_block2",
         )
 
+        # Temporal CNN / TCN
+        self.tcn_proj = layers.Dense(384, name="tcn_proj")
+        self.tcn_blocks = [
+            TemporalConvBlock(
+                channels=384,
+                kernel_size=5,
+                dilation_rate=dilation,
+                dropout=0.3,
+                name=f"tcn_block_d{dilation}",
+            )
+            for dilation in (1, 2, 4, 8)
+        ]
+
+        # Conformer-lite
+        self.conformer_proj = layers.Dense(256, name="conformer_proj")
+        self.conformer_pos_embed = layers.Embedding(
+            MAX_FRAMES,
+            256,
+            name="conformer_pos_embed",
+        )
+        self.conformer_drop = layers.Dropout(0.3)
+        self.conformer_blocks = [
+            ConformerBlock(
+                d_model=256,
+                num_heads=4,
+                ff_multiplier=4,
+                conv_kernel_size=15,
+                dropout=0.3,
+                name=f"conformer_block{i + 1}",
+            )
+            for i in range(3)
+        ]
+
+        # Transformer-medium
+        self.transformer_medium_proj = layers.Dense(384, name="transformer_medium_proj")
+        self.transformer_medium_pos_embed = layers.Embedding(
+            MAX_FRAMES,
+            384,
+            name="transformer_medium_pos_embed",
+        )
+        self.transformer_medium_drop = layers.Dropout(0.3)
+        self.transformer_medium_blocks = [
+            TransformerEncoderBlock(
+                d_model=384,
+                num_heads=4,
+                ff_dim=768,
+                dropout=0.3,
+                name=f"transformer_medium_block{i + 1}",
+            )
+            for i in range(4)
+        ]
+
         # Per-frame character output
         self.char_dense = layers.Dense(128, activation="relu")
         self.char_dropout = layers.Dropout(0.3)
         self.char_output = layers.Dense(num_chars, activation=None, name="char_logits")
+
+    def _add_positional_embedding(
+        self,
+        x: tf.Tensor,
+        pos_embed: layers.Embedding,
+    ) -> tf.Tensor:
+        seq_len = tf.shape(x)[1]
+        positions = tf.range(start=0, limit=seq_len, delta=1)
+        pos = pos_embed(positions)
+        return x + pos[tf.newaxis, :, :]
 
     def _apply_temporal_backbone(self, x, training=False):
         if self.model_variant == "bigru":
@@ -156,12 +357,29 @@ class LipReadingCTC(Model):
             x = self.temporal_bilstm1(x, training=training)
             x = self.temporal_bilstm2(x, training=training)
             return x
+        if self.model_variant == "tcn":
+            x = self.tcn_proj(x)
+            for block in self.tcn_blocks:
+                x = block(x, training=training)
+            return x
+        if self.model_variant == "conformer_lite":
+            x = self.conformer_proj(x)
+            x = self._add_positional_embedding(x, self.conformer_pos_embed)
+            x = self.conformer_drop(x, training=training)
+            for block in self.conformer_blocks:
+                x = block(x, training=training)
+            return x
+        if self.model_variant == "transformer_medium":
+            x = self.transformer_medium_proj(x)
+            x = self._add_positional_embedding(x, self.transformer_medium_pos_embed)
+            x = self.transformer_medium_drop(x, training=training)
+            for block in self.transformer_medium_blocks:
+                x = block(x, training=training)
+            return x
 
         # transformer
         x = self.transformer_proj(x)
-        positions = tf.range(start=0, limit=MAX_FRAMES, delta=1)
-        pos = self.transformer_pos_embed(positions)
-        x = x + pos
+        x = self._add_positional_embedding(x, self.transformer_pos_embed)
         x = self.transformer_drop(x, training=training)
         x = self.transformer_block1(x, training=training)
         x = self.transformer_block2(x, training=training)
@@ -199,6 +417,16 @@ class LipReadingCTC(Model):
             self.transformer_drop,
             self.transformer_block1,
             self.transformer_block2,
+            self.tcn_proj,
+            *self.tcn_blocks,
+            self.conformer_proj,
+            self.conformer_pos_embed,
+            self.conformer_drop,
+            *self.conformer_blocks,
+            self.transformer_medium_proj,
+            self.transformer_medium_pos_embed,
+            self.transformer_medium_drop,
+            *self.transformer_medium_blocks,
         ]
 
     def get_head_layers(self) -> list[layers.Layer]:
