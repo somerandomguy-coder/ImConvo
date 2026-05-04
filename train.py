@@ -51,7 +51,7 @@ CONFIG = {
     "split_dir": "./splits/grid_v1",
     "batch_size": 48,
     "num_epochs": 100,
-    "learning_rate": 3e-4,
+    "learning_rate": 1e-4,
     "weight_decay": 1e-4,
     "patience": 9,
     "seed": 42,
@@ -60,6 +60,10 @@ CONFIG = {
         "head_dropout": 0.3,
     },
     "variant_model_config": {
+         "tcn": {
+            "backbone_dropout": 0.35,
+            "head_dropout": 0.3,
+        },
         "conformer_lite": {
             "backbone_dropout": 0.2,
             "head_dropout": 0.2,
@@ -78,6 +82,14 @@ CONFIG = {
         "cosine_alpha": 0.1,  # min lr ratio for cosine phase
     },
     "variant_optimizer_config": {
+        "tcn": {
+            "learning_rate": 3e-4,
+            "warmup_epochs": 0,
+            "scheduler": "reduce_on_plateau",
+            "plateau_factor": 0.5,
+            "plateau_patience": 5,
+            "min_lr": 1e-6,
+        },
         "conformer_lite": {
             "learning_rate": 1e-4,
             "warmup_epochs": 3,

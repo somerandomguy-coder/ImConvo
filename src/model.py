@@ -286,6 +286,7 @@ class LipReadingCTC(Model):
 
         # Temporal CNN / TCN
         self.tcn_proj = layers.Dense(384, name="tcn_proj")
+        self.tcn_pos_embed = layers.Embedding(MAX_FRAMES, 384, name="tcn_pos_embed")
         self.tcn_blocks = [
             TemporalConvBlock(
                 channels=384,
@@ -294,7 +295,7 @@ class LipReadingCTC(Model):
                 dropout=self.backbone_dropout,
                 name=f"tcn_block_d{dilation}",
             )
-            for dilation in (1, 2, 4, 8)
+            for dilation in (1, 2, 4, 8, 16)
         ]
 
         # Conformer-lite
@@ -366,6 +367,7 @@ class LipReadingCTC(Model):
             return x
         if self.model_variant == "tcn":
             x = self.tcn_proj(x)
+            x = self._add_positional_embedding(x, self.tcn_pos_embed)
             for block in self.tcn_blocks:
                 x = block(x, training=training)
             return x
