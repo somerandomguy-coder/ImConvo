@@ -24,6 +24,7 @@ import numpy as np
 import tensorflow as tf
 from clearml import Task
 from src import (
+    FRONTEND_MODELS,
     MODEL_VARIANTS,
     NUM_CHARS,
     LipReadingCTC,
@@ -105,6 +106,7 @@ CONFIG = {
     },
     "resume_from_best_checkpoint": False,
     "model_variant": "bigru",
+    "frontend_model": "flatten",  # flatten|gap_proj|resnet18
     "augmentation_profile": "off",  # off|spatial|spatiotemporal|strong
     "freeze_config": {
         "enabled": False,
@@ -138,6 +140,12 @@ def parse_args():
         help="Temporal backbone variant override",
     )
     parser.add_argument(
+        "--frontend-model",
+        choices=FRONTEND_MODELS,
+        default=None,
+        help="Visual frontend override",
+    )
+    parser.add_argument(
         "--augmentation-profile",
         choices=AUGMENTATION_PROFILES,
         default=None,
@@ -155,6 +163,14 @@ def set_global_determinism(seed: int):
         tf.config.experimental.enable_op_determinism()
     except Exception:
         pass
+
+
+def resolve_checkpoint_filename(model_variant: str, frontend_model: str) -> str:
+    base_name = VARIANT_CHECKPOINT_MAP[model_variant]
+    if frontend_model == "flatten":
+        return base_name
+    stem, ext = os.path.splitext(base_name)
+    return f"{stem}_{frontend_model}{ext}"
 
 
 def _resolve_variant_model_config(model_variant: str) -> dict[str, float]:
@@ -354,6 +370,7 @@ def load_history_container(path: str) -> dict:
         "started_at": None,
         "ended_at": None,
         "model_variant": "unknown",
+        "frontend_model": "unknown",
         "checkpoint_path": None,
         "history": legacy_history,
         "freeze": data.get("freeze") if isinstance(data, dict) else None,
@@ -484,12 +501,19 @@ def main():
     global task
     args = parse_args()
     model_variant = (args.model_variant or CONFIG["model_variant"]).lower()
+    frontend_model = (
+        args.frontend_model or str(CONFIG.get("frontend_model", "flatten"))
+    ).lower()
     augmentation_profile = (
         args.augmentation_profile or str(CONFIG.get("augmentation_profile", "off"))
     ).lower()
     if model_variant not in MODEL_VARIANTS:
         raise ValueError(
             f"Unsupported model variant '{model_variant}'. Supported: {MODEL_VARIANTS}"
+        )
+    if frontend_model not in FRONTEND_MODELS:
+        raise ValueError(
+            f"Unsupported frontend model '{frontend_model}'. Supported: {FRONTEND_MODELS}"
         )
     if augmentation_profile not in AUGMENTATION_PROFILES:
         raise ValueError(
@@ -504,6 +528,7 @@ def main():
     print(f"TensorFlow version: {tf.__version__}")
     print(f"GPUs available: {tf.config.list_physical_devices('GPU')}")
     print(f"Model variant: {model_variant}")
+    print(f"Frontend model: {frontend_model}")
     print(f"Augmentation profile: {augmentation_profile}")
     print(f"Feature-time masking: {feature_time_masking}")
     print(
@@ -519,11 +544,14 @@ def main():
 
     task = Task.init(
         project_name="ImConvo",
-        task_name=f"LipReadingCTC_Training_{model_variant}_{augmentation_profile}",
+        task_name=(
+            "LipReadingCTC_Training_"
+            f"{model_variant}_{frontend_model}_{augmentation_profile}"
+        ),
         task_type=Task.TaskTypes.training,
     )
     run_started_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
-    run_id = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ") + f"_{model_variant}"
+    run_id = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ") + f"_{model_variant}_{frontend_model}"
 
     # ---- Check preprocessing ----
     if not os.path.isdir(CONFIG["preprocessed_dir"]):
@@ -570,6 +598,7 @@ def main():
     # ---- Build model ----
     model = build_lipreading_ctc(
         model_variant=model_variant,
+        frontend_model=frontend_model,
         num_chars=NUM_CHARS,
         feature_time_masking=feature_time_masking,
         backbone_dropout=float(model_cfg["backbone_dropout"]),
@@ -590,17 +619,23 @@ def main():
     os.makedirs(checkpoint_dir, exist_ok=True)
     best_checkpoint_path = os.path.join(
         checkpoint_dir,
-        VARIANT_CHECKPOINT_MAP[model_variant],
+        resolve_checkpoint_filename(model_variant, frontend_model),
     )
+    variant_checkpoint_path = os.path.join(checkpoint_dir, VARIANT_CHECKPOINT_MAP[model_variant])
     bigru_checkpoint_path = os.path.join(
         checkpoint_dir,
         VARIANT_CHECKPOINT_MAP["bigru"],
+    )
+    bigru_frontend_checkpoint_path = os.path.join(
+        checkpoint_dir,
+        resolve_checkpoint_filename("bigru", frontend_model),
     )
     legacy_checkpoint_path = os.path.join(checkpoint_dir, LEGACY_BASELINE_CHECKPOINT)
 
     # Keep backward compatibility with prior baseline checkpoint naming.
     if (
         model_variant == "bigru"
+        and frontend_model == "flatten"
         and not os.path.exists(bigru_checkpoint_path)
         and os.path.exists(legacy_checkpoint_path)
     ):
@@ -617,11 +652,27 @@ def main():
                 f"({type(e).__name__}: {e}). Training from current initialization."
             )
     elif CONFIG["resume_from_best_checkpoint"]:
-        if model_variant != "bigru":
+        resumed_from_variant_checkpoint = False
+        if os.path.exists(variant_checkpoint_path):
+            try:
+                model.load_weights(variant_checkpoint_path)
+                print(
+                    "[Checkpoint] Frontend-specific checkpoint missing. "
+                    f"Resumed from variant baseline: {variant_checkpoint_path}"
+                )
+                resumed_from_variant_checkpoint = True
+            except BaseException as e:
+                print(
+                    f"[Checkpoint] Failed variant baseline resume from {variant_checkpoint_path} "
+                    f"({type(e).__name__}: {e})."
+                )
+        if model_variant != "bigru" and not resumed_from_variant_checkpoint:
             # Partial transfer from BiGRU baseline into shared front-end/head layers.
             # Mismatched backbone layers are skipped by name/shape.
             transfer_source = None
-            if os.path.exists(bigru_checkpoint_path):
+            if os.path.exists(bigru_frontend_checkpoint_path):
+                transfer_source = bigru_frontend_checkpoint_path
+            elif os.path.exists(bigru_checkpoint_path):
                 transfer_source = bigru_checkpoint_path
             elif os.path.exists(legacy_checkpoint_path):
                 transfer_source = legacy_checkpoint_path
@@ -643,7 +694,7 @@ def main():
                     f"[Checkpoint] No variant checkpoint at {best_checkpoint_path} "
                     "and no baseline BiGRU checkpoint found. Training from scratch."
                 )
-        else:
+        elif not resumed_from_variant_checkpoint:
             print(
                 f"[Checkpoint] No previous checkpoint found at {best_checkpoint_path}. "
                 "Training from scratch."
@@ -855,6 +906,7 @@ def main():
             "started_at": run_started_at,
             "ended_at": run_ended_at,
             "model_variant": model_variant,
+            "frontend_model": frontend_model,
             "augmentation_profile": augmentation_profile,
             "feature_time_masking": feature_time_masking,
             "model_config": model_cfg,
@@ -878,6 +930,7 @@ def main():
             "profile": augmentation_profile,
             "feature_time_masking": feature_time_masking,
         }
+        container["frontend"] = {"model": frontend_model}
         container["model_config"] = model_cfg
         container["optimizer"] = opt_cfg
         container["freeze"] = freeze_meta

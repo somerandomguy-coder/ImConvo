@@ -10,6 +10,11 @@ Supported temporal backbones:
 - tcn
 - conformer_lite
 - transformer_medium
+
+Supported visual frontends:
+- flatten (current baseline)
+- gap_proj (3D-CNN + per-frame GAP + projection)
+- resnet18 (3D stem + per-frame residual stack + GAP + projection)
 """
 
 from __future__ import annotations
@@ -26,6 +31,12 @@ MODEL_VARIANTS = (
     "tcn",
     "conformer_lite",
     "transformer_medium",
+)
+
+FRONTEND_MODELS = (
+    "flatten",
+    "gap_proj",
+    "resnet18",
 )
 
 
@@ -189,6 +200,66 @@ class ConformerBlock(layers.Layer):
         return self.final_norm(x)
 
 
+class ResNet2DBasicBlock(layers.Layer):
+    """Basic residual Conv2D block for frame-wise ResNet frontend."""
+
+    def __init__(self, filters: int, stride: int = 1, **kwargs):
+        super().__init__(**kwargs)
+        self.filters = int(filters)
+        self.stride = int(stride)
+
+        self.conv1 = layers.Conv2D(
+            filters=self.filters,
+            kernel_size=3,
+            strides=self.stride,
+            padding="same",
+            use_bias=False,
+        )
+        self.bn1 = layers.BatchNormalization()
+        self.relu1 = layers.ReLU()
+
+        self.conv2 = layers.Conv2D(
+            filters=self.filters,
+            kernel_size=3,
+            strides=1,
+            padding="same",
+            use_bias=False,
+        )
+        self.bn2 = layers.BatchNormalization()
+        self.relu_out = layers.ReLU()
+
+        self.shortcut_conv = None
+        self.shortcut_bn = None
+
+    def build(self, input_shape):
+        in_channels = int(input_shape[-1])
+        if self.stride != 1 or in_channels != self.filters:
+            self.shortcut_conv = layers.Conv2D(
+                filters=self.filters,
+                kernel_size=1,
+                strides=self.stride,
+                padding="same",
+                use_bias=False,
+            )
+            self.shortcut_bn = layers.BatchNormalization()
+        super().build(input_shape)
+
+    def call(self, x, training=False):
+        residual = x
+        if self.shortcut_conv is not None:
+            residual = self.shortcut_conv(residual)
+            residual = self.shortcut_bn(residual, training=training)
+
+        out = self.conv1(x)
+        out = self.bn1(out, training=training)
+        out = self.relu1(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out, training=training)
+        out = out + residual
+        return self.relu_out(out)
+
+
 class LipReadingCTC(Model):
     """
     3D-CNN + configurable temporal backbone lip reading model with CTC output.
@@ -201,9 +272,11 @@ class LipReadingCTC(Model):
         self,
         num_chars: int = NUM_CHARS,
         model_variant: str = "bigru",
+        frontend_model: str = "flatten",
         feature_time_masking: bool = False,
         backbone_dropout: float = 0.3,
         head_dropout: float = 0.3,
+        frontend_projection_dim: int = 256,
         **kwargs,
     ):
         super().__init__(name="LipReadingCTC", **kwargs)
@@ -213,12 +286,20 @@ class LipReadingCTC(Model):
                 f"Unsupported model_variant='{model_variant}'. "
                 f"Supported: {MODEL_VARIANTS}"
             )
+        frontend_model = frontend_model.lower()
+        if frontend_model not in FRONTEND_MODELS:
+            raise ValueError(
+                f"Unsupported frontend_model='{frontend_model}'. "
+                f"Supported: {FRONTEND_MODELS}"
+            )
 
         self.num_chars = num_chars
         self.model_variant = model_variant
+        self.frontend_model = frontend_model
         self.feature_time_masking = bool(feature_time_masking)
         self.backbone_dropout = float(backbone_dropout)
         self.head_dropout = float(head_dropout)
+        self.frontend_projection_dim = int(frontend_projection_dim)
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
 
         # 3D CNN front-end
@@ -238,6 +319,55 @@ class LipReadingCTC(Model):
         self.pool3 = layers.MaxPool3D(pool_size=(1, 2, 2), strides=(1, 2, 2))
 
         self.time_flatten = layers.TimeDistributed(layers.Flatten())
+        self.time_gap = layers.TimeDistributed(layers.GlobalAveragePooling2D())
+        self.gap_proj = layers.TimeDistributed(
+            layers.Dense(self.frontend_projection_dim, activation="relu"),
+            name="frontend_gap_proj",
+        )
+
+        # ResNet18-style frame-wise frontend (small variant with 256 max channels).
+        self.resnet_td_blocks = [
+            layers.TimeDistributed(
+                ResNet2DBasicBlock(filters=64, stride=1, name="resnet2d_block1_1"),
+                name="frontend_resnet_td_block1_1",
+            ),
+            layers.TimeDistributed(
+                ResNet2DBasicBlock(filters=64, stride=1, name="resnet2d_block1_2"),
+                name="frontend_resnet_td_block1_2",
+            ),
+            layers.TimeDistributed(
+                ResNet2DBasicBlock(filters=128, stride=2, name="resnet2d_block2_1"),
+                name="frontend_resnet_td_block2_1",
+            ),
+            layers.TimeDistributed(
+                ResNet2DBasicBlock(filters=128, stride=1, name="resnet2d_block2_2"),
+                name="frontend_resnet_td_block2_2",
+            ),
+            layers.TimeDistributed(
+                ResNet2DBasicBlock(filters=256, stride=2, name="resnet2d_block3_1"),
+                name="frontend_resnet_td_block3_1",
+            ),
+            layers.TimeDistributed(
+                ResNet2DBasicBlock(filters=256, stride=1, name="resnet2d_block3_2"),
+                name="frontend_resnet_td_block3_2",
+            ),
+            layers.TimeDistributed(
+                ResNet2DBasicBlock(filters=256, stride=2, name="resnet2d_block4_1"),
+                name="frontend_resnet_td_block4_1",
+            ),
+            layers.TimeDistributed(
+                ResNet2DBasicBlock(filters=256, stride=1, name="resnet2d_block4_2"),
+                name="frontend_resnet_td_block4_2",
+            ),
+        ]
+        self.resnet_time_gap = layers.TimeDistributed(
+            layers.GlobalAveragePooling2D(),
+            name="frontend_resnet_time_gap",
+        )
+        self.resnet_proj = layers.TimeDistributed(
+            layers.Dense(self.frontend_projection_dim, activation="relu"),
+            name="frontend_resnet_proj",
+        )
 
         # Temporal backbone blocks (only one path used in call)
         self.temporal_bigru1 = layers.Bidirectional(
@@ -352,6 +482,25 @@ class LipReadingCTC(Model):
         pos = pos_embed(positions)
         return x + pos[tf.newaxis, :, :]
 
+    def _apply_visual_frontend(self, inputs, training=False):
+        x = self.pool1(self.relu1(self.bn1(self.conv1(inputs), training=training)))
+
+        if self.frontend_model == "resnet18":
+            for block in self.resnet_td_blocks:
+                x = block(x, training=training)
+            x = self.resnet_time_gap(x)
+            x = self.resnet_proj(x)
+            return x
+
+        x = self.pool2(self.relu2(self.bn2(self.conv2(x), training=training)))
+        x = self.pool3(self.relu3(self.bn3(self.conv3(x), training=training)))
+
+        if self.frontend_model == "gap_proj":
+            x = self.time_gap(x)
+            return self.gap_proj(x)
+
+        return self.time_flatten(x)
+
     def _apply_temporal_backbone(self, x, training=False):
         if self.model_variant == "bigru":
             x = self.temporal_bigru1(x, training=training)
@@ -410,6 +559,11 @@ class LipReadingCTC(Model):
             self.relu3,
             self.pool3,
             self.time_flatten,
+            self.time_gap,
+            self.gap_proj,
+            *self.resnet_td_blocks,
+            self.resnet_time_gap,
+            self.resnet_proj,
         ]
 
     def get_backbone_layers(self) -> list[layers.Layer]:
@@ -463,11 +617,7 @@ class LipReadingCTC(Model):
         return tf.where(mask[:, :, tf.newaxis], tf.zeros_like(x), x)
 
     def call(self, inputs, training=False):
-        x = self.pool1(self.relu1(self.bn1(self.conv1(inputs), training=training)))
-        x = self.pool2(self.relu2(self.bn2(self.conv2(x), training=training)))
-        x = self.pool3(self.relu3(self.bn3(self.conv3(x), training=training)))
-
-        x = self.time_flatten(x)
+        x = self._apply_visual_frontend(inputs, training=training)
         if self.feature_time_masking and training:
             x = tf.cond(
                 tf.random.uniform([], 0.0, 1.0) < 0.5,
@@ -545,9 +695,11 @@ class LipReadingCTC(Model):
             {
                 "num_chars": self.num_chars,
                 "model_variant": self.model_variant,
+                "frontend_model": self.frontend_model,
                 "feature_time_masking": self.feature_time_masking,
                 "backbone_dropout": self.backbone_dropout,
                 "head_dropout": self.head_dropout,
+                "frontend_projection_dim": self.frontend_projection_dim,
             }
         )
         return config
@@ -555,18 +707,22 @@ class LipReadingCTC(Model):
 
 def build_lipreading_ctc(
     model_variant: str,
+    frontend_model: str = "flatten",
     num_chars: int = NUM_CHARS,
     feature_time_masking: bool = False,
     backbone_dropout: float = 0.3,
     head_dropout: float = 0.3,
+    frontend_projection_dim: int = 256,
 ) -> LipReadingCTC:
     """Factory for lipreading CTC model variants."""
     return LipReadingCTC(
         num_chars=num_chars,
         model_variant=model_variant,
+        frontend_model=frontend_model,
         feature_time_masking=feature_time_masking,
         backbone_dropout=backbone_dropout,
         head_dropout=head_dropout,
+        frontend_projection_dim=frontend_projection_dim,
     )
 
 

@@ -24,6 +24,7 @@ from src.dataset import (
     resolve_sample_ids,
 )
 from src.model import (
+    FRONTEND_MODELS,
     MODEL_VARIANTS,
     LipReadingCTC,
     build_lipreading_ctc,
@@ -65,6 +66,7 @@ __all__ = [
     "resolve_sample_ids",
     "build_split_arrays",
     # Model
+    "FRONTEND_MODELS",
     "MODEL_VARIANTS",
     "LipReadingCTC",
     "build_lipreading_ctc",

@@ -29,6 +29,7 @@ EVAL_DIR = ROOT / "reports" / "eval_result"
 JSONL_PATH = ROOT / "experiments.jsonl"
 TRAIN_PY = ROOT / "train.py"
 TRAINING_HISTORY_PATH = ROOT / "checkpoints" / "training_history.json"
+FRONTEND_MODELS = ("flatten", "gap_proj", "resnet18")
 VARIANT_CHECKPOINT_MAP = {
     "bigru": "best_ctc_model_bigru.keras",
     "gru": "best_ctc_model_gru.keras",
@@ -38,6 +39,14 @@ VARIANT_CHECKPOINT_MAP = {
     "conformer_lite": "best_ctc_model_conformer_lite.keras",
     "transformer_medium": "best_ctc_model_transformer_medium.keras",
 }
+
+
+def resolve_checkpoint_filename(model_variant: str, frontend_model: str) -> str:
+    base_name = VARIANT_CHECKPOINT_MAP.get(model_variant, "best_ctc_model.keras")
+    if frontend_model == "flatten":
+        return base_name
+    stem, ext = Path(base_name).stem, Path(base_name).suffix
+    return f"{stem}_{frontend_model}{ext}"
 
 
 def detect_branch() -> str:
@@ -100,6 +109,7 @@ def extract_config_from_train() -> dict:
         "resume_from_best_checkpoint": None,
         "split_dir": "./splits/grid_v1",
         "model_variant": "bigru",
+        "frontend_model": "flatten",
         "augmentation_profile": "off",
         "freeze_config": {},
     }
@@ -150,11 +160,12 @@ def resolve_setting(
     return str(default_value).lower()
 
 
-def make_run_id(branch: str, model_variant: str, split_version: str) -> str:
+def make_run_id(branch: str, model_variant: str, frontend_model: str, split_version: str) -> str:
     date_str = datetime.now().strftime("%Y-%m-%d")
     compact_model = re.sub(r"[^a-zA-Z0-9]+", "-", model_variant.lower()).strip("-")
+    compact_frontend = re.sub(r"[^a-zA-Z0-9]+", "-", frontend_model.lower()).strip("-")
     compact_branch = re.sub(r"[^a-zA-Z0-9]+", "-", branch.lower()).strip("-")
-    return f"{date_str}_{compact_model}_{compact_branch}_{split_version}"
+    return f"{date_str}_{compact_model}_{compact_frontend}_{compact_branch}_{split_version}"
 
 
 def main() -> None:
@@ -179,6 +190,12 @@ def main() -> None:
         choices=["off", "spatial", "spatiotemporal", "strong"],
         default=None,
         help="Augmentation profile override for tracking",
+    )
+    parser.add_argument(
+        "--frontend-model",
+        choices=FRONTEND_MODELS,
+        default=None,
+        help="Visual frontend override for tracking",
     )
     parser.add_argument(
         "--notes",
@@ -208,16 +225,25 @@ def main() -> None:
     freeze_cfg = cfg.get("freeze_config") if isinstance(cfg.get("freeze_config"), dict) else {}
 
     model_variant = (args.model_variant or str(cfg.get("model_variant") or "bigru")).lower()
+    frontend_model = (args.frontend_model or str(cfg.get("frontend_model") or "flatten")).lower()
     latest_model_variant = latest_run.get("model_variant")
+    latest_frontend_model = latest_run.get("frontend_model")
     latest_augmentation_profile = latest_run.get("augmentation_profile")
+    latest_checkpoint_path = latest_run.get("checkpoint_path")
 
     default_model_variant = str(cfg.get("model_variant") or "bigru")
+    default_frontend_model = str(cfg.get("frontend_model") or "flatten")
     default_augmentation_profile = str(cfg.get("augmentation_profile") or "off")
 
     model_variant = resolve_setting(
         cli_value=args.model_variant,
         latest_run_value=latest_model_variant,
         default_value=default_model_variant,
+    )
+    frontend_model = resolve_setting(
+        cli_value=args.frontend_model,
+        latest_run_value=latest_frontend_model,
+        default_value=default_frontend_model,
     )
     augmentation_profile = resolve_setting(
         cli_value=args.augmentation_profile,
@@ -242,25 +268,54 @@ def main() -> None:
             f"latest_run='{latest_augmentation_profile}'. "
             "Using resolved priority (CLI > latest run > default)."
         )
+    if latest_frontend_model and latest_frontend_model != default_frontend_model:
+        print(
+            "[WARN] frontend_model mismatch: "
+            f"train.py default='{default_frontend_model}' vs "
+            f"latest_run='{latest_frontend_model}'. "
+            "Using resolved priority (CLI > latest run > default)."
+        )
 
     run_id = args.run_id or make_run_id(
         branch=branch,
         model_variant=model_variant,
+        frontend_model=frontend_model,
         split_version=split_version,
     )
+
+    latest_frontend_for_match = (
+        str(latest_frontend_model).lower() if latest_frontend_model else "flatten"
+    )
+    use_latest_checkpoint = (
+        bool(latest_checkpoint_path)
+        and str(latest_model_variant or "").lower() == model_variant
+        and latest_frontend_for_match == frontend_model
+    )
+
+    if use_latest_checkpoint:
+        latest_checkpoint = Path(str(latest_checkpoint_path))
+        if not latest_checkpoint.is_absolute():
+            latest_checkpoint = (ROOT / latest_checkpoint).resolve()
+        try:
+            base_checkpoint = str(latest_checkpoint.relative_to(ROOT))
+        except ValueError:
+            base_checkpoint = str(latest_checkpoint)
+    else:
+        base_checkpoint = str(
+            (ROOT / "checkpoints" / resolve_checkpoint_filename(model_variant, frontend_model)).relative_to(ROOT)
+        )
 
     record = {
         "run_id": run_id,
         "date": datetime.now().strftime("%Y-%m-%d"),
         "branch": branch,
-        "base_checkpoint": str(
-            (ROOT / "checkpoints" / VARIANT_CHECKPOINT_MAP.get(model_variant, "best_ctc_model.keras")).relative_to(ROOT)
-        ),
+        "base_checkpoint": base_checkpoint,
         "resume_from_checkpoint": bool(cfg.get("resume_from_best_checkpoint")),
         "split_version": split_version,
         "train_split": "train",
         "val_oos_split": "val_oos",
         "model_variant": model_variant,
+        "frontend_model": frontend_model,
         "augmentation_profile": augmentation_profile,
         "feature_time_masking": augmentation_profile == "strong",
         "freeze_enabled": bool(freeze_cfg.get("enabled", False)),

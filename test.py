@@ -5,11 +5,19 @@ import argparse
 
 import numpy as np
 import tensorflow as tf
-from src import MODEL_VARIANTS, NUM_CHARS, LipReadingCTC, build_lipreading_ctc, char_indices_to_text
+from src import (
+    FRONTEND_MODELS,
+    MODEL_VARIANTS,
+    NUM_CHARS,
+    LipReadingCTC,
+    build_lipreading_ctc,
+    char_indices_to_text,
+)
 from src.dataset import build_split_arrays, create_ctc_dataset
 
 CONFIG = {
     "model_variant": "bigru",
+    "frontend_model": "flatten",
     "batch_size": 8,
     "preprocessed_dir": "./data/preprocessed/",
     "split_dir": "./splits/grid_v1",
@@ -30,12 +38,27 @@ def parse_args():
         help="Temporal backbone variant override",
     )
     parser.add_argument(
+        "--frontend-model",
+        choices=FRONTEND_MODELS,
+        default=None,
+        help="Visual frontend override. If omitted, infer from checkpoint name.",
+    )
+    parser.add_argument(
         "--batch-size",
         type=int,
         default=None,
         help="Evaluation batch size override",
     )
     return parser.parse_args()
+
+
+def infer_frontend_from_checkpoint_path(checkpoint_path: str) -> str:
+    stem = os.path.splitext(os.path.basename(checkpoint_path))[0].lower()
+    if stem.endswith("_resnet18"):
+        return "resnet18"
+    if stem.endswith("_gap_proj"):
+        return "gap_proj"
+    return "flatten"
 
 # Re-use your compute functions from train.py
 def compute_wer(reference: str, hypothesis: str) -> float:
@@ -146,11 +169,20 @@ def evaluate_split(
 
 def run_evaluation():
     args = parse_args()
+    checkpoint_path = args.checkpoint_path
     model_variant = (args.model_variant or CONFIG["model_variant"]).lower()
+    frontend_model = (
+        args.frontend_model
+        or infer_frontend_from_checkpoint_path(checkpoint_path)
+        or CONFIG["frontend_model"]
+    ).lower()
     batch_size = args.batch_size or CONFIG["batch_size"]
 
+    if frontend_model not in FRONTEND_MODELS:
+        print(f"❌ Error: Unsupported frontend_model='{frontend_model}'")
+        return
+
     # 1. Setup paths
-    checkpoint_path = args.checkpoint_path
     preprocessed_dir = CONFIG["preprocessed_dir"]
     split_dir = CONFIG["split_dir"]
     report_path = (
@@ -169,7 +201,12 @@ def run_evaluation():
     # 3. Load Model
     print("🤖 Loading model weights...")
     print(f"   Variant: {model_variant}")
-    model = build_lipreading_ctc(model_variant=model_variant, num_chars=NUM_CHARS)
+    print(f"   Frontend: {frontend_model}")
+    model = build_lipreading_ctc(
+        model_variant=model_variant,
+        frontend_model=frontend_model,
+        num_chars=NUM_CHARS,
+    )
     # Build model with dummy input
     _ = model(np.random.randn(1, 75, 80, 120, 1).astype(np.float32))
     model.load_weights(checkpoint_path)
@@ -179,6 +216,8 @@ def run_evaluation():
 
     with open(report_path, "w", buffering=1024 * 1024) as f:
         f.write(f"LipNet Evaluation Report - {datetime.now()}\n")
+        f.write(f"Model Variant: {model_variant}\n")
+        f.write(f"Frontend Model: {frontend_model}\n")
         f.write(f"{'='*60}\n\n")
         aggregate = {}
 
