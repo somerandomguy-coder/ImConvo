@@ -55,7 +55,7 @@ from src import (
 )
 from src.model import LegacyLipReadingCTC
 
-DEFAULT_MODEL_PATH = ROOT_DIR / "checkpoints" / "best_ctc_model.keras"
+DEFAULT_MODEL_PATH = ROOT_DIR / "checkpoints" / "best_ctc_model_bigru.keras"
 PREVIEW_DIR = ROOT_DIR / "demo_api" / "preview_cache"
 EXAMPLE_DIR = ROOT_DIR / "data" / "s3_processed"
 LOCAL_ORIGINS = [

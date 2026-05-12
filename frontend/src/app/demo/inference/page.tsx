@@ -14,7 +14,7 @@ import {
   type HealthStatus,
 } from "@/utils/demoApi";
 
-const DEFAULT_MODEL_PATH = "checkpoints/best_ctc_model.keras";
+const DEFAULT_MODEL_PATH = "checkpoints/best_ctc_model_bigru.keras";
 const DEFAULT_DECODER_MODE = "greedy_ctc";
 const DEFAULT_BEAM_WIDTH = 10;
 const DEFAULT_DEBUG_TOP_K = 5;
