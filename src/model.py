@@ -68,45 +68,93 @@ class TransformerEncoderBlock(layers.Layer):
         ffn_out = self.dropout2(ffn_out, training=training)
         return self.norm2(x + ffn_out)
 
+class SqueezeExcitation1D(layers.Layer):
+    def __init__(self, channels, reduction_ratio=16, **kwargs):
+        super(SqueezeExcitation1D, self).__init__(**kwargs)
+        self.channels = channels
+        # Reduction bottlenecks the channels to learn complex relationships efficiently
+        reduced_channels = max(1, channels // reduction_ratio)
+        
+        self.fc1 = layers.Dense(reduced_channels, activation="relu")
+        self.fc2 = layers.Dense(channels, activation="sigmoid")
+
+    def call(self, inputs):
+        # inputs shape: (Batch, Time, Channels)
+        
+        # 1. SQUEEZE: Average across the temporal timeline (axis 1)
+        # Output shape: (Batch, Channels)
+        squeeze = tf.reduce_mean(inputs, axis=1)
+        
+        # 2. EXCITATION: Process channel relationships
+        excitation = self.fc1(squeeze)
+        excitation = self.fc2(excitation) # Shape: (Batch, Channels)
+        
+        # Reshape to (Batch, 1, Channels) so it can broadcast multiply across all 75 frames
+        excitation = excitation[:, tf.newaxis, :]
+        
+        # 3. SCALE: Weight the original features
+        return inputs * excitation
 
 class TemporalConvBlock(layers.Layer):
-    """Residual dilated temporal Conv1D block for TCN backbone."""
+    """Dense Temporal Block with built-in Channel Reduction."""
 
     def __init__(
         self,
-        channels: int,
+        channels: int,         # Target channels (384) and growth rate
         kernel_size: int,
         dilation_rate: int,
         dropout: float,
         **kwargs,
     ):
         super().__init__(**kwargs)
+        self.target_channels = channels # Store the 384 target size
+        
         self.conv = layers.Conv1D(
-            filters=channels,
+            filters=channels,  # Generates 384 new features
             kernel_size=kernel_size,
             dilation_rate=dilation_rate,
-            padding="same",
+            padding="same",  
         )
         self.norm = layers.BatchNormalization()
         self.relu = layers.ReLU()
         self.dropout = layers.Dropout(dropout)
+        
+        # This is the "Reduce/Transition Layer" from the paper!
+        # It forces the accumulated channels back down to exactly 384.
+        self.reduce_layer = layers.Conv1D(
+            filters=channels, 
+            kernel_size=1, 
+            padding="same"
+        )
+        
         self.out_norm = layers.LayerNormalization(epsilon=1e-6)
-        self.residual_proj = None
+        self.se = None 
 
     def build(self, input_shape):
         input_dim = int(input_shape[-1])
-        conv_dim = int(self.conv.filters)
-        if input_dim != conv_dim:
-            self.residual_proj = layers.Dense(conv_dim)
+        # SE looks at the incoming channel dimension dynamically
+        self.se = SqueezeExcitation1D(channels=input_dim)
         super().build(input_shape)
 
     def call(self, x, training=False):
-        residual = x if self.residual_proj is None else self.residual_proj(x)
-        out = self.conv(x)
+        # 1. Attention first on incoming features
+        attention_x = self.se(x)
+        
+        # 2. Extract temporal patterns
+        out = self.conv(attention_x)
         out = self.norm(out, training=training)
         out = self.relu(out)
         out = self.dropout(out, training=training)
-        return self.out_norm(residual + out)
+        
+        # 3. Dense Concatenation (Paper's core feature connection)
+        dense_output = tf.concat([x, out], axis=-1)
+        
+        # 4. Dimension Reduction 
+        # Shrinks the accumulated channels back to exactly 384 
+        reduced_output = self.reduce_layer(dense_output)
+        
+        # 5. Clean shortcut return with matching dimensions
+        return self.out_norm(reduced_output)
 
 
 class ConformerBlock(layers.Layer):
@@ -516,7 +564,6 @@ class LipReadingCTC(Model):
             return x
         if self.model_variant == "tcn":
             x = self.tcn_proj(x)
-            x = self._add_positional_embedding(x, self.tcn_pos_embed)
             for block in self.tcn_blocks:
                 x = block(x, training=training)
             return x
