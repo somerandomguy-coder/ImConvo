@@ -41,7 +41,7 @@ def process_single_sample(sample_info, output_dir, align_output_dir, force):
     try:
         frames = extract_lip_frames(video_path)
         if frames is not None:
-            np.save(output_path, frames)
+            np.save(output_path, (frames * 255).astype(np.uint8))
             _copy_file(align_path, align_dst)
             return unique_name
     except Exception as e:

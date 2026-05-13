@@ -13,7 +13,10 @@ import argparse
 
 # Your local imports
 from src import MODEL_VARIANTS, NUM_CHARS, build_lipreading_ctc, char_indices_to_text
-from src.utils import *
+from src.utils import (
+    LIP_Y_START, LIP_Y_END, LIP_X_START, LIP_X_END,
+    create_live_face_landmarker, detect_lip_bbox_frame,
+)
 
 DEFAULT_CHECKPOINT_PATH = "./checkpoints/best_ctc_model.keras"
 
@@ -135,22 +138,39 @@ def main():
         print(f"✓ Model weights loaded from: {checkpoint_path}")
 
     # 2. Setup Video
+    # Initialize MediaPipe landmarker once (downloads model on first run ~1.8 MB)
+    live_landmarker = create_live_face_landmarker()
+    if live_landmarker is not None:
+        print("[Info] MediaPipe face landmarker ready — dynamic lip crop active.")
+    else:
+        print("[Warn] MediaPipe unavailable — using fallback hardcoded crop.")
+
     cap = cv2.VideoCapture(video_source)
     frame_buffer = []
     BUFFER_SIZE = 75
     prediction_text = ""
+    last_lip_bbox = None  # last successfully detected bbox; used as fallback
 
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret: break
 
-        # --- Step A: Process Mouth ---
-        mouth_roi = frame[LIP_Y_START:LIP_Y_END, LIP_X_START:LIP_X_END]
-        
+        # --- Step A: Detect lip region ---
+        if live_landmarker is not None:
+            detected = detect_lip_bbox_frame(live_landmarker, frame)
+            if detected is not None:
+                last_lip_bbox = detected
+
+        if last_lip_bbox is not None:
+            x1, y1, x2, y2 = last_lip_bbox
+            mouth_roi = frame[y1:y2, x1:x2]
+        else:
+            mouth_roi = frame[LIP_Y_START:LIP_Y_END, LIP_X_START:LIP_X_END]
+
         if mouth_roi.size > 0:
             processed_f = preprocess_frame(mouth_roi)
             frame_buffer.append(processed_f)
-        
+
         if len(frame_buffer) > BUFFER_SIZE:
             frame_buffer.pop(0)
 
@@ -158,24 +178,28 @@ def main():
         if len(frame_buffer) == BUFFER_SIZE:
             input_tensor = np.expand_dims(frame_buffer, axis=(0, -1))
             input_tensor = tf.convert_to_tensor(input_tensor, dtype=tf.float32)
-            
+
             logits = model(input_tensor, training=False)
             decoded = model.decode_greedy(logits)
-            
+
             pred_indices = decoded[0]
             pred_indices = pred_indices[pred_indices >= 0]
             prediction_text = char_indices_to_text(pred_indices.tolist())
 
         # --- Step C: Visual Overlays ---
-        # 1. Mirror for the user
         display_frame = cv2.flip(frame, 1)
         h, w, _ = display_frame.shape
 
-        # 2. Draw Mouth Bounding Box (Note: flipped X coordinates)
-        # Formula: w - start_x to w - end_x because of the flip
-        cv2.rectangle(display_frame, (w-LIP_X_END, LIP_Y_START), (w-LIP_X_START, LIP_Y_END), (0, 255, 255), 2)
-        cv2.putText(display_frame, "PLACE LIPS HERE", (w-LIP_X_END, LIP_Y_START-10), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255), 1)
+        # Draw lip bbox (dynamic if MediaPipe detected, fallback to hardcoded)
+        if last_lip_bbox is not None:
+            x1, y1, x2, y2 = last_lip_bbox
+            cv2.rectangle(display_frame, (w - x2, y1), (w - x1, y2), (0, 255, 255), 2)
+            cv2.putText(display_frame, "LIPS DETECTED", (w - x2, max(0, y1 - 10)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255), 1)
+        else:
+            cv2.rectangle(display_frame, (w-LIP_X_END, LIP_Y_START), (w-LIP_X_START, LIP_Y_END), (0, 165, 255), 2)
+            cv2.putText(display_frame, "PLACE LIPS HERE", (w-LIP_X_END, LIP_Y_START-10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 165, 255), 1)
 
         # 3. Buffer Progress Bar (Visual timing)
         progress = len(frame_buffer) / BUFFER_SIZE

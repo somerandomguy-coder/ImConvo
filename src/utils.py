@@ -9,6 +9,8 @@ adapts to each speaker's face position and size.
 
 import glob
 import os
+import urllib.request
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -63,6 +65,157 @@ NUM_CHARS = 28  # 26 letters + space + blank
 SILENCE_TOKENS = {"sil", "sp"}
 MAX_CHAR_LEN = 40 # max character sequence length (padded)
 # hotfix: sentence usually only around 40 character
+
+# ---------------------------------------------------------------------------
+# MediaPipe lip landmark indices (Face Mesh 468-point model)
+# ---------------------------------------------------------------------------
+
+# Outer lip contour — used to compute a tight, landmark-anchored crop bbox
+LIP_IDX = [61, 185, 40, 39, 37, 0, 267, 269, 270, 409,
+           291, 308, 415, 310, 312, 13, 82, 81, 80, 191]
+
+# MediaPipe gives a tight contour around the red lip surface only (~10px tall
+# for a closed mouth). These larger multipliers + pixel floor expand the crop to
+# include surrounding skin context, matching roughly what Haar-based cropping
+# produces via face-ratio estimates.
+_MP_PAD_X_RATIO = 0.5   # 50% of lip width added to each horizontal side
+_MP_PAD_Y_RATIO = 2.0   # 200% of lip height added to each vertical side
+_MP_PAD_MIN_PX  = 20    # minimum pixels of padding on every side
+
+_mediapipe_available: bool | None = None
+_face_mesh_offline = None  # per-process singleton (safe in multiprocessing)
+
+# MediaPipe Tasks API — face landmarker model (auto-downloaded on first use, ~1.8 MB)
+_FACE_LANDMARKER_URL = (
+    "https://storage.googleapis.com/mediapipe-models/"
+    "face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
+)
+_FACE_LANDMARKER_CACHE = (
+    Path(__file__).resolve().parent.parent / "temp_reports" / "face_landmarker.task"
+)
+
+
+def _check_mediapipe() -> bool:
+    global _mediapipe_available
+    if _mediapipe_available is None:
+        try:
+            import mediapipe  # noqa: F401
+            _mediapipe_available = True
+        except ImportError:
+            _mediapipe_available = False
+    return _mediapipe_available
+
+
+def _ensure_face_landmarker_model() -> str:
+    """Download the MediaPipe face landmarker .task file once and cache it."""
+    if not _FACE_LANDMARKER_CACHE.exists():
+        _FACE_LANDMARKER_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        print("[MediaPipe] Downloading face landmarker model (~1.8 MB)...")
+        urllib.request.urlretrieve(_FACE_LANDMARKER_URL, str(_FACE_LANDMARKER_CACHE))
+        print(f"[MediaPipe] Saved to {_FACE_LANDMARKER_CACHE}")
+    return str(_FACE_LANDMARKER_CACHE)
+
+
+def _get_face_mesh_offline():
+    """Lazily create a per-process FaceLandmarker for offline/batch use (IMAGE mode)."""
+    global _face_mesh_offline
+    if _face_mesh_offline is None:
+        from mediapipe.tasks import python as mp_tasks
+        from mediapipe.tasks.python import vision as mp_vision
+        model_path = _ensure_face_landmarker_model()
+        options = mp_vision.FaceLandmarkerOptions(
+            base_options=mp_tasks.BaseOptions(model_asset_path=model_path),
+            running_mode=mp_vision.RunningMode.IMAGE,
+            num_faces=1,
+        )
+        _face_mesh_offline = mp_vision.FaceLandmarker.create_from_options(options)
+    return _face_mesh_offline
+
+
+def _mediapipe_mouth_bbox(frame_bgr: np.ndarray, frame_h: int, frame_w: int):
+    """
+    Detect lip bounding box via MediaPipe Face Landmarker landmark min/max.
+    Returns (x_start, y_start, x_end, y_end) or None if detection fails.
+    """
+    import mediapipe as mp
+    frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
+    result = _get_face_mesh_offline().detect(mp_image)
+    if not result.face_landmarks:
+        return None
+    lm = result.face_landmarks[0]
+    xs = [lm[i].x * frame_w for i in LIP_IDX]
+    ys = [lm[i].y * frame_h for i in LIP_IDX]
+    lip_w = max(xs) - min(xs)
+    lip_h = max(ys) - min(ys)
+    pad_x = max(lip_w * _MP_PAD_X_RATIO, _MP_PAD_MIN_PX)
+    pad_y = max(lip_h * _MP_PAD_Y_RATIO, _MP_PAD_MIN_PX)
+    x_start = max(0, int(min(xs) - pad_x))
+    y_start = max(0, int(min(ys) - pad_y))
+    x_end = min(frame_w, int(max(xs) + pad_x))
+    y_end = min(frame_h, int(max(ys) + pad_y))
+    return (x_start, y_start, x_end, y_end)
+
+
+def create_live_face_landmarker():
+    """
+    Create a MediaPipe FaceLandmarker for per-frame live inference (IMAGE mode).
+    Returns the landmarker object, or None if MediaPipe is unavailable.
+    """
+    if not _check_mediapipe():
+        return None
+    try:
+        from mediapipe.tasks import python as mp_tasks
+        from mediapipe.tasks.python import vision as mp_vision
+        model_path = _ensure_face_landmarker_model()
+        options = mp_vision.FaceLandmarkerOptions(
+            base_options=mp_tasks.BaseOptions(model_asset_path=model_path),
+            running_mode=mp_vision.RunningMode.IMAGE,
+            num_faces=1,
+        )
+        return mp_vision.FaceLandmarker.create_from_options(options)
+    except Exception as e:
+        print(f"[MediaPipe] Failed to create live landmarker: {e}")
+        return None
+
+
+def detect_lip_bbox_frame(landmarker, frame_bgr: np.ndarray):
+    """
+    Run MediaPipe face landmark detection on a single BGR frame.
+    Returns (x1, y1, x2, y2) or None.
+    """
+    import mediapipe as mp
+    h, w = frame_bgr.shape[:2]
+    frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
+    result = landmarker.detect(mp_image)
+    if not result.face_landmarks:
+        return None
+    lm = result.face_landmarks[0]
+    xs = [lm[i].x * w for i in LIP_IDX]
+    ys = [lm[i].y * h for i in LIP_IDX]
+    lip_w = max(xs) - min(xs)
+    lip_h = max(ys) - min(ys)
+    pad_x = max(lip_w * _MP_PAD_X_RATIO, _MP_PAD_MIN_PX)
+    pad_y = max(lip_h * _MP_PAD_Y_RATIO, _MP_PAD_MIN_PX)
+    x1 = max(0, int(min(xs) - pad_x))
+    y1 = max(0, int(min(ys) - pad_y))
+    x2 = min(w, int(max(xs) + pad_x))
+    y2 = min(h, int(max(ys) + pad_y))
+    return (x1, y1, x2, y2)
+
+
+def _detect_mouth_bbox(frame_bgr: np.ndarray, frame_h: int, frame_w: int):
+    """Try MediaPipe first; fall back to Haar cascade."""
+    if _check_mediapipe():
+        bbox = _mediapipe_mouth_bbox(frame_bgr, frame_h, frame_w)
+        if bbox is not None:
+            return bbox
+    gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+    face = _detect_face(gray)
+    if face is not None:
+        return _face_to_mouth_bbox(face, frame_h, frame_w)
+    return None
 
 
 def text_to_char_indices(text: str) -> list:
@@ -206,25 +359,18 @@ def _face_to_mouth_bbox(face_bbox, frame_h: int, frame_w: int):
 
 def extract_lip_frames(video_path: str) -> np.ndarray:
     """
-    Load video, detect face, crop lip region dynamically,
-    convert to grayscale, resize, and normalize.
+    Load video, detect lip region (MediaPipe primary, Haar fallback),
+    crop, convert to grayscale, resize, and normalize.
 
-    Strategy:
-        1. Read all frames from the video.
-        2. Detect faces in a sample of frames (every Nth frame for speed).
-        3. Compute the median mouth bounding box across all detections
-           for a stable, jitter-free crop.
-        4. If no face is detected in any frame, fall back to the legacy
-           hardcoded coordinates.
-        5. Crop all frames using the stable bounding box.
+    Uses a stable median bbox computed across sampled frames to avoid
+    jitter, then applies it uniformly to all frames.
 
     Returns:
-        np.ndarray of shape (MAX_FRAMES, FRAME_HEIGHT, FRAME_WIDTH), float32 in [0, 1].
+        np.ndarray of shape (MAX_FRAMES, FRAME_HEIGHT, FRAME_WIDTH), float32 in [0, 1],
+        or None if no face/lips were detected in any frame.
     """
-    frames = []
     raw_frames = []
 
-    # --- Pass 1: Read all frames ---
     cap = cv2.VideoCapture(video_path)
     while True:
         ret, frame = cap.read()
@@ -238,75 +384,48 @@ def extract_lip_frames(video_path: str) -> np.ndarray:
 
     frame_h, frame_w = raw_frames[0].shape[:2]
 
-    # --- Pass 2: Detect faces in sampled frames ---
-    # Sample ~10 evenly-spaced frames for face detection
+    # Detect on ~10 evenly-spaced frames for speed
     sample_interval = max(1, len(raw_frames) // 10)
     mouth_bboxes = []
-
     for i in range(0, len(raw_frames), sample_interval):
-        gray = cv2.cvtColor(raw_frames[i], cv2.COLOR_BGR2GRAY)
-        face = _detect_face(gray)
-        if face is not None:
-            mouth_bbox = _face_to_mouth_bbox(face, frame_h, frame_w)
-            mouth_bboxes.append(mouth_bbox)
+        bbox = _detect_mouth_bbox(raw_frames[i], frame_h, frame_w)
+        if bbox is not None:
+            mouth_bboxes.append(bbox)
 
-    # If detection rate is low, retry on ALL frames
+    # Retry on all frames if detection rate is low
     num_sampled = len(range(0, len(raw_frames), sample_interval))
     if len(mouth_bboxes) < num_sampled * 0.5 and sample_interval > 1:
         mouth_bboxes = []
-        for i in range(len(raw_frames)):
-            gray = cv2.cvtColor(raw_frames[i], cv2.COLOR_BGR2GRAY)
-            face = _detect_face(gray)
-            if face is not None:
-                mouth_bbox = _face_to_mouth_bbox(face, frame_h, frame_w)
-                mouth_bboxes.append(mouth_bbox)
+        for frame in raw_frames:
+            bbox = _detect_mouth_bbox(frame, frame_h, frame_w)
+            if bbox is not None:
+                mouth_bboxes.append(bbox)
 
-    # --- Compute stable crop region ---
-    if len(mouth_bboxes) > 0:
-        # Use median of detected mouth bboxes for stability
-        all_x_starts = [b[0] for b in mouth_bboxes]
-        all_y_starts = [b[1] for b in mouth_bboxes]
-        all_x_ends   = [b[2] for b in mouth_bboxes]
-        all_y_ends   = [b[3] for b in mouth_bboxes]
-
-        x_start = int(np.median(all_x_starts))
-        y_start = int(np.median(all_y_starts))
-        x_end   = int(np.median(all_x_ends))
-        y_end   = int(np.median(all_y_ends))
-
-        # Clamp to frame boundaries
-        x_start = max(0, x_start)
-        y_start = max(0, y_start)
-        x_end   = min(frame_w, x_end)
-        y_end   = min(frame_h, y_end)
-
-        detection_rate = len(mouth_bboxes) / max(1, len(raw_frames) // sample_interval)
-        if detection_rate < 0.5:
-            basename = os.path.basename(video_path)
-            print(f"  [WARN] {basename}: face detected in only "
-                  f"{detection_rate*100:.0f}% of sampled frames")
-    else:
-        # No face detected — skip this sample
-        basename = os.path.basename(video_path)
-        print(f"  [SKIP] {basename}: no face detected in any frame")
+    if len(mouth_bboxes) == 0:
+        print(f"  [SKIP] {os.path.basename(video_path)}: no lips detected in any frame")
         return None
 
-    # --- Pass 3: Crop, grayscale, resize ---
+    # Stable crop: median bbox across all detections
+    x_start = max(0, int(np.median([b[0] for b in mouth_bboxes])))
+    y_start = max(0, int(np.median([b[1] for b in mouth_bboxes])))
+    x_end   = min(frame_w, int(np.median([b[2] for b in mouth_bboxes])))
+    y_end   = min(frame_h, int(np.median([b[3] for b in mouth_bboxes])))
+
+    detection_rate = len(mouth_bboxes) / max(1, num_sampled)
+    if detection_rate < 0.5:
+        print(f"  [WARN] {os.path.basename(video_path)}: "
+              f"detected in only {detection_rate*100:.0f}% of sampled frames")
+
+    frames = []
     for frame in raw_frames:
-    # Ensure the crop is within the actual frame dimensions
         y1, y2 = max(0, y_start), min(frame.shape[0], y_end)
         x1, x2 = max(0, x_start), min(frame.shape[1], x_end)
-        
         lip = frame[y1:y2, x1:x2]
-        
-        # If for some reason the crop is still empty, use a black frame 
-        # instead of 'continue' to keep the timing consistent.
         if lip.size == 0:
             lip_resized = np.zeros((FRAME_HEIGHT, FRAME_WIDTH), dtype=np.uint8)
         else:
             lip_gray = cv2.cvtColor(lip, cv2.COLOR_BGR2GRAY)
             lip_resized = cv2.resize(lip_gray, (FRAME_WIDTH, FRAME_HEIGHT))
-            
         frames.append(lip_resized)
 
     if len(frames) == 0:
@@ -314,7 +433,6 @@ def extract_lip_frames(video_path: str) -> np.ndarray:
 
     frames = np.array(frames, dtype=np.float32) / 255.0
 
-    # Pad or truncate
     T = frames.shape[0]
     if T < MAX_FRAMES:
         pad = np.zeros((MAX_FRAMES - T, FRAME_HEIGHT, FRAME_WIDTH), dtype=np.float32)
