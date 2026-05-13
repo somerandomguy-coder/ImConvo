@@ -286,7 +286,10 @@ def create_ctc_dataset(
         # We use tf.py_function because np.load isn't native TensorFlow
         def _read_file(p: tf.Tensor) -> np.ndarray:
             frames = np.load(p.numpy().decode())
-            frames = frames[..., np.newaxis].astype(np.float32)
+            if frames.dtype == np.uint8:
+                frames = frames[..., np.newaxis].astype(np.float32) / 255.0
+            else:
+                frames = frames[..., np.newaxis].astype(np.float32)
             return frames
 
         frames = tf.py_function(_read_file, [path], tf.float32)

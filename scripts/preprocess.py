@@ -111,7 +111,7 @@ def preprocess_dataset(data_dir: str, output_dir: str, force: bool = False):
             if frames is None:
                 # Face detection failed — skip this sample
                 continue
-            np.save(output_path, frames)
+            np.save(output_path, (frames * 255).astype(np.uint8))
             valid_names.append(unique_name)
 
             # Copy alignment file to flat output
