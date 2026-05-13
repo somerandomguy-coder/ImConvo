@@ -9,8 +9,10 @@ It exposes:
 from __future__ import annotations
 
 import argparse
+import base64
 from contextlib import asynccontextmanager
 import glob
+import io
 import os
 import platform
 import shutil
@@ -35,10 +37,20 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+# Load .env so GEMINI_API_KEY is available without manual export
+_env_file = ROOT_DIR / ".env"
+if _env_file.exists():
+    for _line in _env_file.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _v = _line.split("=", 1)
+            os.environ.setdefault(_k.strip(), _v.strip())
+
 from src import (
     BLANK_IDX,
     CHAR_LIST,
     DEFAULT_BEAM_WIDTH,
+    FRONTEND_MODELS,
     MODEL_VARIANTS,
     DEFAULT_DEBUG_TOP_K,
     DEFAULT_DECODER_MODE,
@@ -54,8 +66,9 @@ from src import (
     parse_alignment_text,
 )
 from src.model import LegacyLipReadingCTC
+from src.llm_postprocessor import LLMPostprocessor
 
-DEFAULT_MODEL_PATH = ROOT_DIR / "checkpoints" / "best_ctc_model_bigru.keras"
+DEFAULT_MODEL_PATH = ROOT_DIR / "checkpoints" / "best_ctc_model_conformer_lite_gap_proj.keras"
 PREVIEW_DIR = ROOT_DIR / "demo_api" / "preview_cache"
 EXAMPLE_DIR = ROOT_DIR / "data" / "s3_processed"
 LOCAL_ORIGINS = [
@@ -86,6 +99,15 @@ app.add_middleware(
 
 _MODEL_CACHE: dict[str, LipReadingCTC] = {}
 _ACTIVE_MODEL_PATH: str | None = None
+_LLM_CACHE: dict[tuple[str, str], LLMPostprocessor] = {}
+
+
+def _get_or_create_postprocessor(api_key: str | None, model: str) -> LLMPostprocessor:
+    resolved_key = api_key or os.environ.get("GEMINI_API_KEY", "")
+    cache_key = (resolved_key, model)
+    if cache_key not in _LLM_CACHE:
+        _LLM_CACHE[cache_key] = LLMPostprocessor(api_key=api_key, model=model)
+    return _LLM_CACHE[cache_key]
 
 PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/preview", StaticFiles(directory=str(PREVIEW_DIR)), name="preview")
@@ -148,41 +170,46 @@ def _get_or_load_model(model_path: str) -> LipReadingCTC:
     if not os.path.exists(model_path):
         raise HTTPException(status_code=400, detail=f"Model path not found: {model_path}")
 
-    def infer_variant_from_path(path: str) -> str:
+    def infer_variant_and_frontend(path: str) -> tuple[str, str]:
+        """Return (model_variant, frontend_model) inferred from checkpoint filename."""
         stem = Path(path).stem.lower()
-        if stem.endswith("_transformer_medium"):
-            return "transformer_medium"
-        if stem.endswith("_conformer_lite"):
-            return "conformer_lite"
-        if stem.endswith("_tcn"):
-            return "tcn"
-        if stem.endswith("_bilstm"):
-            return "bilstm"
-        if stem.endswith("_bigru"):
-            return "bigru"
-        if stem.endswith("_transformer"):
-            return "transformer"
-        if stem.endswith("_gru"):
-            return "gru"
-        # Legacy default checkpoint name maps to baseline BiGRU.
-        return "bigru"
+        # Check combined variant+frontend suffixes first (most specific).
+        for variant in sorted(MODEL_VARIANTS, key=len, reverse=True):
+            for frontend in sorted(FRONTEND_MODELS, key=len, reverse=True):
+                if frontend == "flatten":
+                    # flatten is the default — only match it if no other frontend matches
+                    continue
+                if stem.endswith(f"_{variant}_{frontend}"):
+                    return variant, frontend
+        # Check variant-only suffixes.
+        for variant in sorted(MODEL_VARIANTS, key=len, reverse=True):
+            if stem.endswith(f"_{variant}"):
+                return variant, "flatten"
+        # Legacy default.
+        return "bigru", "flatten"
 
-    inferred = infer_variant_from_path(model_path)
-    candidates: list[str] = [inferred]
-    candidates.extend([v for v in MODEL_VARIANTS if v not in candidates])
+    inferred_variant, inferred_frontend = infer_variant_and_frontend(model_path)
+    # Try inferred combination first, then all (variant, frontend) combos as fallback.
+    candidates: list[tuple[str, str]] = [(inferred_variant, inferred_frontend)]
+    for v in MODEL_VARIANTS:
+        for f in FRONTEND_MODELS:
+            if (v, f) not in candidates:
+                candidates.append((v, f))
 
     load_errors: list[str] = []
     model = None
-    for variant in candidates:
+    for variant, frontend in candidates:
         try:
-            candidate_model = build_lipreading_ctc(model_variant=variant, num_chars=NUM_CHARS)
+            candidate_model = build_lipreading_ctc(
+                model_variant=variant, frontend_model=frontend, num_chars=NUM_CHARS
+            )
             _ = candidate_model(np.random.randn(1, 75, 80, 120, 1).astype(np.float32))
             candidate_model.load_weights(model_path)
             model = candidate_model
-            print(f"[DemoAPI] Loaded model '{model_path}' with variant='{variant}'.")
+            print(f"[DemoAPI] Loaded model '{model_path}' with variant='{variant}' frontend='{frontend}'.")
             break
         except Exception as exc:
-            load_errors.append(f"{variant}: {type(exc).__name__}: {exc}")
+            load_errors.append(f"{variant}/{frontend}: {type(exc).__name__}: {exc}")
 
     if model is None:
         # Legacy fallback for checkpoints saved before backbone refactor.
@@ -195,9 +222,10 @@ def _get_or_load_model(model_path: str) -> LipReadingCTC:
         except Exception as legacy_exc:
             load_errors.append(f"legacy_bigru: {type(legacy_exc).__name__}: {legacy_exc}")
             joined = " | ".join(load_errors[:5])
+            tried = [f"{v}/{f}" for v, f in candidates] + ["legacy_bigru"]
             raise RuntimeError(
                 "Could not load checkpoint with any known variant. "
-                f"Tried {candidates + ['legacy_bigru']}. Errors: {joined}"
+                f"Tried {tried}. Errors: {joined}"
             )
 
     _MODEL_CACHE[model_path] = model
@@ -413,6 +441,21 @@ def _token_from_index(idx: int) -> str:
     return f"<unk:{idx}>"
 
 
+def _encode_sample_frames(frames: np.ndarray, n: int = 6) -> list[str]:
+    """Return n evenly-spaced frames as base64-encoded PNG data URIs."""
+    T = frames.shape[0]
+    indices = [int(i * (T - 1) / (n - 1)) for i in range(n)]
+    result: list[str] = []
+    for idx in indices:
+        gray = (frames[idx] * 255).astype(np.uint8)
+        # scale up 4x for visibility (120x80 → 480x320)
+        display = cv2.resize(gray, (480, 320), interpolation=cv2.INTER_NEAREST)
+        _, buf = cv2.imencode(".png", display)
+        b64 = base64.b64encode(buf.tobytes()).decode("ascii")
+        result.append(f"data:image/png;base64,{b64}")
+    return result
+
+
 def _run_inference_from_video_path(
     video_path: str,
     file_name: str,
@@ -422,6 +465,9 @@ def _run_inference_from_video_path(
     decoder_mode: str,
     beam_width: int,
     debug_top_k: int,
+    llm_postprocess: bool = False,
+    gemini_api_key: str | None = None,
+    llm_model: str = LLMPostprocessor.DEFAULT_MODEL,
 ) -> dict[str, Any]:
     total_start = time.perf_counter()
 
@@ -448,6 +494,7 @@ def _run_inference_from_video_path(
     if not isinstance(frames, np.ndarray) or frames.ndim != 3:
         raise HTTPException(status_code=400, detail="Invalid preprocessed frame tensor.")
 
+    crop_samples = _encode_sample_frames(frames, n=6)
     input_tensor = np.expand_dims(frames, axis=(0, -1)).astype(np.float32)
 
     inference_start = time.perf_counter()
@@ -468,6 +515,20 @@ def _run_inference_from_video_path(
     reference_text, reference_source = _resolve_reference_text(file_name, expected_text)
     wer = compute_wer(reference_text, predicted_text) if reference_text is not None else None
     cer = compute_cer(reference_text, predicted_text) if reference_text is not None else None
+
+    # Optional LLM post-processing
+    llm_corrected_text: str | None = None
+    llm_wer: float | None = None
+    llm_cer: float | None = None
+    if llm_postprocess:
+        try:
+            postprocessor = _get_or_create_postprocessor(gemini_api_key, llm_model)
+            llm_corrected_text = postprocessor.correct(predicted_text)
+            if reference_text is not None:
+                llm_wer = compute_wer(reference_text, llm_corrected_text)
+                llm_cer = compute_cer(reference_text, llm_corrected_text)
+        except Exception as llm_exc:
+            print(f"[LLM] Post-processing failed: {llm_exc}")
 
     total_ms = (time.perf_counter() - total_start) * 1000
 
@@ -510,7 +571,14 @@ def _run_inference_from_video_path(
             "collapsed_text": decode_result.final_text,
             "decoder_top_k": decode_result.debug_top_k,
         },
+        "crop_samples": crop_samples,
         "device_specs": get_device_specs(),
+        "llm": {
+            "corrected_text": llm_corrected_text,
+            "wer": llm_wer,
+            "cer": llm_cer,
+            "model": llm_model if llm_postprocess else None,
+        },
     }
 
 
@@ -565,6 +633,9 @@ async def analyze(
     decoder_mode: str = Form(default=DEFAULT_DECODER_MODE),
     beam_width: int = Form(default=DEFAULT_BEAM_WIDTH),
     debug_top_k: int = Form(default=DEFAULT_DEBUG_TOP_K),
+    llm_postprocess: bool = Form(default=False),
+    gemini_api_key: str | None = Form(default=None),
+    llm_model: str = Form(default=LLMPostprocessor.DEFAULT_MODEL),
 ) -> dict[str, Any]:
     suffix = Path(file.filename or "upload.bin").suffix or ".bin"
 
@@ -583,6 +654,9 @@ async def analyze(
             decoder_mode=decoder_mode,
             beam_width=beam_width,
             debug_top_k=debug_top_k,
+            llm_postprocess=llm_postprocess,
+            gemini_api_key=gemini_api_key,
+            llm_model=llm_model,
         )
     finally:
         try:
@@ -599,6 +673,9 @@ def analyze_example(
     decoder_mode: str = Form(default=DEFAULT_DECODER_MODE),
     beam_width: int = Form(default=DEFAULT_BEAM_WIDTH),
     debug_top_k: int = Form(default=DEFAULT_DEBUG_TOP_K),
+    llm_postprocess: bool = Form(default=False),
+    gemini_api_key: str | None = Form(default=None),
+    llm_model: str = Form(default=LLMPostprocessor.DEFAULT_MODEL),
 ) -> dict[str, Any]:
     example_path = _resolve_example_path(example_name)
     return _run_inference_from_video_path(
@@ -610,6 +687,9 @@ def analyze_example(
         decoder_mode=decoder_mode,
         beam_width=beam_width,
         debug_top_k=debug_top_k,
+        llm_postprocess=llm_postprocess,
+        gemini_api_key=gemini_api_key,
+        llm_model=llm_model,
     )
 
 

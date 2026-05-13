@@ -40,6 +40,7 @@ libclang==18.1.1
 librosa==0.11.0
 llvmlite==0.47.0
 markdown-it-py==4.0.0
+mediapipe>=0.10.0
 MarkupSafe==3.0.3
 matplotlib==3.10.8
 mdurl==0.1.2

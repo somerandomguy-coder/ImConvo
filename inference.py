@@ -14,6 +14,7 @@ import argparse
 # Your local imports
 from src import MODEL_VARIANTS, NUM_CHARS, build_lipreading_ctc, char_indices_to_text
 from src.utils import *
+from src.llm_postprocessor import LLMPostprocessor
 
 DEFAULT_CHECKPOINT_PATH = "./checkpoints/best_ctc_model.keras"
 
@@ -41,6 +42,24 @@ def get_args():
         choices=MODEL_VARIANTS,
         default=None,
         help="Optional temporal backbone override. If omitted, infer from checkpoint name.",
+    )
+    parser.add_argument(
+        "--llm-postprocess",
+        action="store_true",
+        default=False,
+        help="Apply Gemini LLM post-processing to snap predictions to valid GRID sentences.",
+    )
+    parser.add_argument(
+        "--gemini-api-key",
+        type=str,
+        default=None,
+        help="Gemini API key (falls back to GEMINI_API_KEY env var).",
+    )
+    parser.add_argument(
+        "--llm-model",
+        type=str,
+        default=LLMPostprocessor.DEFAULT_MODEL,
+        help="Gemini model name for post-processing.",
     )
     return parser.parse_args()
 
@@ -134,11 +153,21 @@ def main():
     if os.path.exists(checkpoint_path):
         print(f"✓ Model weights loaded from: {checkpoint_path}")
 
-    # 2. Setup Video
+    # 2. Optionally load LLM post-processor
+    postprocessor = None
+    if args.llm_postprocess:
+        print(f"🔮 LLM post-processing enabled (model: {args.llm_model})")
+        postprocessor = LLMPostprocessor(
+            api_key=args.gemini_api_key,
+            model=args.llm_model,
+        )
+
+    # 3. Setup Video
     cap = cv2.VideoCapture(video_source)
     frame_buffer = []
     BUFFER_SIZE = 75
     prediction_text = ""
+    corrected_text = ""
 
     while cap.isOpened():
         ret, frame = cap.read()
@@ -165,6 +194,8 @@ def main():
             pred_indices = decoded[0]
             pred_indices = pred_indices[pred_indices >= 0]
             prediction_text = char_indices_to_text(pred_indices.tolist())
+            if postprocessor is not None:
+                corrected_text = postprocessor.correct(prediction_text)
 
         # --- Step C: Visual Overlays ---
         # 1. Mirror for the user
@@ -185,9 +216,12 @@ def main():
 
         # 4. Status and Prediction
         status = "READY" if len(frame_buffer) == BUFFER_SIZE else f"BUFFERING: {len(frame_buffer)}/{BUFFER_SIZE}"
-        cv2.rectangle(display_frame, (0, 0), (w, 60), (0, 0, 0), -1)
+        overlay_h = 80 if postprocessor is not None else 60
+        cv2.rectangle(display_frame, (0, 0), (w, overlay_h), (0, 0, 0), -1)
         cv2.putText(display_frame, status, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
-        cv2.putText(display_frame, f"TEXT: {prediction_text}", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+        cv2.putText(display_frame, f"RAW:  {prediction_text}", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 1)
+        if postprocessor is not None:
+            cv2.putText(display_frame, f"LLM:  {corrected_text}", (10, 75), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 128), 2)
 
         cv2.imshow('LipNet Live Monitor', display_frame)
 

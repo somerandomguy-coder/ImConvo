@@ -23,6 +23,9 @@ export interface AnalyzeRequest {
   decoderMode?: string;
   beamWidth?: number;
   debugTopK?: number;
+  llmPostprocess?: boolean;
+  geminiApiKey?: string;
+  llmModel?: string;
 }
 
 export interface AnalyzeExampleRequest {
@@ -32,6 +35,9 @@ export interface AnalyzeExampleRequest {
   decoderMode?: string;
   beamWidth?: number;
   debugTopK?: number;
+  llmPostprocess?: boolean;
+  geminiApiKey?: string;
+  llmModel?: string;
 }
 
 export interface DecoderSpec {
@@ -107,6 +113,13 @@ export interface AnalyzeResponse {
     tf_version: string;
     device_used: "CPU" | "GPU";
   };
+  llm: {
+    corrected_text: string | null;
+    wer: number | null;
+    cer: number | null;
+    model: string | null;
+  } | null;
+  crop_samples: string[];
 }
 
 export async function checkDemoHealth(): Promise<HealthStatus> {
@@ -138,6 +151,15 @@ export async function analyzeDemoVideo(
   }
   if (payload.debugTopK) {
     formData.append("debug_top_k", String(payload.debugTopK));
+  }
+  if (payload.llmPostprocess) {
+    formData.append("llm_postprocess", "true");
+  }
+  if (payload.geminiApiKey?.trim()) {
+    formData.append("gemini_api_key", payload.geminiApiKey.trim());
+  }
+  if (payload.llmModel?.trim()) {
+    formData.append("llm_model", payload.llmModel.trim());
   }
 
   const { data } = await demoApi.post<AnalyzeResponse>("/analyze", formData, {
@@ -180,6 +202,15 @@ export async function analyzeDemoExample(
   }
   if (payload.debugTopK) {
     formData.append("debug_top_k", String(payload.debugTopK));
+  }
+  if (payload.llmPostprocess) {
+    formData.append("llm_postprocess", "true");
+  }
+  if (payload.geminiApiKey?.trim()) {
+    formData.append("gemini_api_key", payload.geminiApiKey.trim());
+  }
+  if (payload.llmModel?.trim()) {
+    formData.append("llm_model", payload.llmModel.trim());
   }
 
   const { data } = await demoApi.post<AnalyzeResponse>(

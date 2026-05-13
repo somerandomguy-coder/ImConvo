@@ -14,6 +14,7 @@ from src import (
     char_indices_to_text,
 )
 from src.dataset import build_split_arrays, create_ctc_dataset
+from src.llm_postprocessor import LLMPostprocessor
 
 CONFIG = {
     "model_variant": "bigru",
@@ -48,6 +49,24 @@ def parse_args():
         type=int,
         default=None,
         help="Evaluation batch size override",
+    )
+    parser.add_argument(
+        "--llm-postprocess",
+        action="store_true",
+        default=False,
+        help="Apply Gemini LLM post-processing to correct CTC predictions.",
+    )
+    parser.add_argument(
+        "--gemini-api-key",
+        type=str,
+        default=None,
+        help="Gemini API key (falls back to GEMINI_API_KEY env var).",
+    )
+    parser.add_argument(
+        "--llm-model",
+        type=str,
+        default=LLMPostprocessor.DEFAULT_MODEL,
+        help="Gemini model name for post-processing.",
     )
     return parser.parse_args()
 
@@ -120,8 +139,12 @@ def evaluate_split(
     dataset: tf.data.Dataset,
     num_steps: int,
     report_file,
+    postprocessor: LLMPostprocessor | None = None,
 ):
-    total_wer, total_cer, num_samples = 0.0, 0.0, 0
+    total_wer, total_cer = 0.0, 0.0
+    total_wer_llm, total_cer_llm = 0.0, 0.0
+    num_samples = 0
+
     report_file.write(f"\n{'='*60}\n")
     report_file.write(f"SPLIT: {split_name}\n")
     report_file.write(f"{'='*60}\n")
@@ -142,29 +165,58 @@ def evaluate_split(
 
             wer = compute_wer(gt_text, pred_text)
             cer = compute_cer(gt_text, pred_text)
-
             total_wer += wer
             total_cer += cer
             num_samples += 1
-            report_file.write(
-                f"{split_name} sample {num_samples} | "
-                f"WER: {wer:.2f} | GT: '{gt_text}' | Pred: '{pred_text}'\n"
-            )
+
+            if postprocessor is not None:
+                corrected_text = postprocessor.correct(pred_text)
+                wer_llm = compute_wer(gt_text, corrected_text)
+                cer_llm = compute_cer(gt_text, corrected_text)
+                total_wer_llm += wer_llm
+                total_cer_llm += cer_llm
+                report_file.write(
+                    f"{split_name} sample {num_samples} | "
+                    f"WER: {wer:.2f} -> {wer_llm:.2f} | "
+                    f"GT: '{gt_text}' | Pred: '{pred_text}' | LLM: '{corrected_text}'\n"
+                )
+            else:
+                report_file.write(
+                    f"{split_name} sample {num_samples} | "
+                    f"WER: {wer:.2f} | GT: '{gt_text}' | Pred: '{pred_text}'\n"
+                )
 
         if (batch_idx + 1) % 5 == 0:
             print(f"  [{split_name}] processed {num_samples} samples...")
 
     avg_wer = total_wer / max(num_samples, 1)
     avg_cer = total_cer / max(num_samples, 1)
-    summary = (
-        f"\n{split_name} SUMMARY\n"
-        f"Total Samples: {num_samples}\n"
-        f"Average WER:   {avg_wer:.4f} ({avg_wer*100:.1f}%)\n"
-        f"Average CER:   {avg_cer:.4f} ({avg_cer*100:.1f}%)\n"
-    )
-    report_file.write(summary)
-    print(summary)
-    return avg_wer, avg_cer, num_samples
+
+    if postprocessor is not None:
+        avg_wer_llm = total_wer_llm / max(num_samples, 1)
+        avg_cer_llm = total_cer_llm / max(num_samples, 1)
+        summary = (
+            f"\n{split_name} SUMMARY\n"
+            f"Total Samples: {num_samples}\n"
+            f"Average WER (raw):  {avg_wer:.4f} ({avg_wer*100:.1f}%)\n"
+            f"Average WER (LLM):  {avg_wer_llm:.4f} ({avg_wer_llm*100:.1f}%)\n"
+            f"Average CER (raw):  {avg_cer:.4f} ({avg_cer*100:.1f}%)\n"
+            f"Average CER (LLM):  {avg_cer_llm:.4f} ({avg_cer_llm*100:.1f}%)\n"
+            f"LLM cache hits: {postprocessor.cache_size} unique predictions cached\n"
+        )
+        report_file.write(summary)
+        print(summary)
+        return avg_wer, avg_cer, num_samples, avg_wer_llm, avg_cer_llm
+    else:
+        summary = (
+            f"\n{split_name} SUMMARY\n"
+            f"Total Samples: {num_samples}\n"
+            f"Average WER:   {avg_wer:.4f} ({avg_wer*100:.1f}%)\n"
+            f"Average CER:   {avg_cer:.4f} ({avg_cer*100:.1f}%)\n"
+        )
+        report_file.write(summary)
+        print(summary)
+        return avg_wer, avg_cer, num_samples, None, None
 
 
 def run_evaluation():
@@ -211,6 +263,15 @@ def run_evaluation():
     _ = model(np.random.randn(1, 75, 80, 120, 1).astype(np.float32))
     model.load_weights(checkpoint_path)
 
+    # 4. Optionally initialise LLM post-processor
+    postprocessor = None
+    if args.llm_postprocess:
+        print(f"🔮 LLM post-processing enabled (model: {args.llm_model})")
+        postprocessor = LLMPostprocessor(
+            api_key=args.gemini_api_key,
+            model=args.llm_model,
+        )
+
     split_names = ["val_oos", "val_is", "test_oos", "test_is"]
     print(f"📝 Evaluating {split_names}. Writing results to {report_path}...")
 
@@ -218,6 +279,8 @@ def run_evaluation():
         f.write(f"LipNet Evaluation Report - {datetime.now()}\n")
         f.write(f"Model Variant: {model_variant}\n")
         f.write(f"Frontend Model: {frontend_model}\n")
+        if postprocessor is not None:
+            f.write(f"LLM Post-processing: {args.llm_model}\n")
         f.write(f"{'='*60}\n\n")
         aggregate = {}
 
@@ -237,30 +300,48 @@ def run_evaluation():
                 augmentation_profile="off",
             )
             num_steps = math.ceil(len(paths) / batch_size)
-            wer, cer, count = evaluate_split(
+            wer, cer, count, wer_llm, cer_llm = evaluate_split(
                 model=model,
                 split_name=split_name,
                 dataset=split_ds,
                 num_steps=num_steps,
                 report_file=f,
+                postprocessor=postprocessor,
             )
-            aggregate[split_name] = {"wer": wer, "cer": cer, "count": count}
+            aggregate[split_name] = {
+                "wer": wer, "cer": cer, "count": count,
+                "wer_llm": wer_llm, "cer_llm": cer_llm,
+            }
 
         f.write(f"\n{'='*60}\nFINAL SUMMARY\n{'='*60}\n")
         for split_name in split_names:
             row = aggregate[split_name]
-            f.write(
-                f"{split_name}: count={row['count']}, "
-                f"WER={row['wer']:.4f}, CER={row['cer']:.4f}\n"
-            )
+            if row["wer_llm"] is not None:
+                f.write(
+                    f"{split_name}: count={row['count']}, "
+                    f"WER={row['wer']:.4f} -> {row['wer_llm']:.4f} (LLM), "
+                    f"CER={row['cer']:.4f} -> {row['cer_llm']:.4f} (LLM)\n"
+                )
+            else:
+                f.write(
+                    f"{split_name}: count={row['count']}, "
+                    f"WER={row['wer']:.4f}, CER={row['cer']:.4f}\n"
+                )
 
         print("\nFinal summary:")
         for split_name in split_names:
             row = aggregate[split_name]
-            print(
-                f"  {split_name}: count={row['count']}, "
-                f"WER={row['wer']:.4f}, CER={row['cer']:.4f}"
-            )
+            if row["wer_llm"] is not None:
+                print(
+                    f"  {split_name}: count={row['count']}, "
+                    f"WER {row['wer']:.4f} -> {row['wer_llm']:.4f} (LLM), "
+                    f"CER {row['cer']:.4f} -> {row['cer_llm']:.4f} (LLM)"
+                )
+            else:
+                print(
+                    f"  {split_name}: count={row['count']}, "
+                    f"WER={row['wer']:.4f}, CER={row['cer']:.4f}"
+                )
     from src.visualization import save_loss_plot
 
     save_loss_plot("./checkpoints/training_history.json")

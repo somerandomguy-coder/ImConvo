@@ -14,7 +14,7 @@ import {
   type HealthStatus,
 } from "@/utils/demoApi";
 
-const DEFAULT_MODEL_PATH = "checkpoints/best_ctc_model_bigru.keras";
+const DEFAULT_MODEL_PATH = "checkpoints/best_ctc_model_conformer_lite_gap_proj.keras";
 const DEFAULT_DECODER_MODE = "greedy_ctc";
 const DEFAULT_BEAM_WIDTH = 10;
 const DEFAULT_DEBUG_TOP_K = 5;
@@ -32,6 +32,7 @@ export default function DemoInferencePage() {
   const [decoders, setDecoders] = useState<DecoderSpec[]>([]);
   const [decoderMode, setDecoderMode] = useState(DEFAULT_DECODER_MODE);
   const [beamWidth, setBeamWidth] = useState(DEFAULT_BEAM_WIDTH);
+  const [llmPostprocess, setLlmPostprocess] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -85,6 +86,7 @@ export default function DemoInferencePage() {
         decoderMode,
         beamWidth,
         debugTopK: DEFAULT_DEBUG_TOP_K,
+        llmPostprocess,
       });
       setResult(analyzed);
     } catch (err: unknown) {
@@ -118,6 +120,7 @@ export default function DemoInferencePage() {
         decoderMode,
         beamWidth,
         debugTopK: DEFAULT_DEBUG_TOP_K,
+        llmPostprocess,
       });
       setResult(analyzed);
     } catch (err: unknown) {
@@ -240,6 +243,25 @@ export default function DemoInferencePage() {
                 disabled={decoderMode !== "beam_ctc"}
               />
             </label>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-end gap-4 border-t border-border pt-4">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={llmPostprocess}
+                onChange={(e) => setLlmPostprocess(e.target.checked)}
+                className="h-4 w-4 rounded border-border accent-accent"
+              />
+              <span className="text-sm font-medium text-foreground">
+                LLM Post-processing (Gemini)
+              </span>
+            </label>
+            {llmPostprocess && (
+              <p className="text-xs text-muted">
+                API key loaded from server <code>.env</code>
+              </p>
+            )}
           </div>
         </section>
 

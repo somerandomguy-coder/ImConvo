@@ -104,6 +104,28 @@ export default function DemoResultPanel({
         )}
       </section>
 
+      {result.crop_samples?.length > 0 && (
+        <section>
+          <p className="mb-2 text-xs uppercase tracking-widest text-muted">
+            Cropped Lip Frames (MediaPipe · 6 samples)
+          </p>
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+            {result.crop_samples.map((src, i) => (
+              <div key={i} className="space-y-1">
+                <img
+                  src={src}
+                  alt={`lip frame ${i}`}
+                  className="w-full rounded border border-border bg-black"
+                />
+                <p className="text-center text-xs text-muted">
+                  f{Math.round((i / 5) * 74)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section>
         <p className="mb-2 text-xs uppercase tracking-widest text-muted">
           Predicted Text
@@ -112,6 +134,30 @@ export default function DemoResultPanel({
           {result.predicted_text || "(empty prediction)"}
         </p>
       </section>
+
+      {result.llm?.corrected_text != null && (
+        <section className="rounded-md border border-green-700/50 bg-green-950/20 p-3">
+          <p className="mb-2 text-xs uppercase tracking-wide text-green-400">
+            LLM Corrected Text
+            {result.llm.model && (
+              <span className="ml-2 normal-case text-green-600">({result.llm.model})</span>
+            )}
+          </p>
+          <p className="font-mono text-lg text-green-200">
+            {result.llm.corrected_text || "(empty)"}
+          </p>
+          {(result.llm.wer != null || result.llm.cer != null) && (
+            <div className="mt-2 flex gap-4 text-sm text-green-400">
+              {result.llm.wer != null && (
+                <span>WER: {displayPercent(result.llm.wer)}</span>
+              )}
+              {result.llm.cer != null && (
+                <span>CER: {displayPercent(result.llm.cer)}</span>
+              )}
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="rounded-md border border-border p-3">
         <p className="mb-2 text-xs uppercase tracking-wide text-muted">
