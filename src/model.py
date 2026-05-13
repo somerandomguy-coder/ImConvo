@@ -91,7 +91,7 @@ class TemporalConvBlock(layers.Layer):
         self.relu = layers.ReLU()
         self.dropout = layers.Dropout(dropout)
         self.out_norm = layers.LayerNormalization(epsilon=1e-6)
-        self.residual_proj = None
+        self.residual_proj = True
 
     def build(self, input_shape):
         input_dim = int(input_shape[-1])
@@ -516,7 +516,6 @@ class LipReadingCTC(Model):
             return x
         if self.model_variant == "tcn":
             x = self.tcn_proj(x)
-            x = self._add_positional_embedding(x, self.tcn_pos_embed)
             for block in self.tcn_blocks:
                 x = block(x, training=training)
             return x

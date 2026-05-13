@@ -1554,6 +1554,258 @@
         }
       },
       "error": null
+    },
+    {
+      "run_id": "20260507T031614Z_conformer_lite_resnet18",
+      "status": "crashed",
+      "started_at": "2026-05-07T03:16:14Z",
+      "ended_at": "2026-05-07T03:20:26Z",
+      "model_variant": "conformer_lite",
+      "frontend_model": "resnet18",
+      "augmentation_profile": "spatiotemporal",
+      "feature_time_masking": false,
+      "model_config": {
+        "backbone_dropout": 0.2,
+        "head_dropout": 0.2
+      },
+      "optimizer": {
+        "learning_rate": 0.0001,
+        "weight_decay": 0.0001,
+        "warmup_epochs": 3,
+        "scheduler": "cosine",
+        "plateau_factor": 0.5,
+        "plateau_patience": 3,
+        "min_lr": 1e-06,
+        "cosine_alpha": 0.1
+      },
+      "checkpoint_path": "/home/nam/ImConvo/checkpoints/best_ctc_model_conformer_lite_resnet18.keras",
+      "history": {},
+      "freeze": {
+        "enabled": false,
+        "warmup_epochs": 0,
+        "warmup_freeze": "frontend",
+        "post_warmup": "full_unfreeze",
+        "transition_epoch": null
+      },
+      "eval": {
+        "val_oos": {
+          "wer": null,
+          "cer": null
+        },
+        "val_is": {
+          "wer": null,
+          "cer": null
+        }
+      },
+      "error": {
+        "type": "NotFoundError",
+        "message": "Graph execution error:\n\nDetected at node LipReadingCTC_1/frontend_resnet_td_block3_1_1/conv2d_9_147/convolution defined at (most recent call last):\n  File \"/home/nam/ImConvo/train.py\", line 981, in <module>\n\n  File \"/home/nam/ImConvo/train.py\", line 829, in main\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 117, in error_handler\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 399, in fit\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 241, in function\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 154, in multi_step_on_iterator\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 125, in wrapper\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 134, in one_step_on_data\n\n  File \"/home/nam/ImConvo/src/model.py\", line 660, in train_step\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 117, in error_handler\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/layers/layer.py\", line 953, in __call__\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 117, in error_handler\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/ops/operation.py\", line 59, in __call__\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 156, in error_handler\n\n  File \"/home/nam/ImConvo/src/model.py\", line 620, in call\n\n  File \"/home/nam/ImConvo/src/model.py\", line 490, in _apply_visual_frontend\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 117, in error_handler\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/layers/layer.py\", line 953, in __call__\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 117, in error_handler\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/ops/operation.py\", line 59, in __call__\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 156, in error_handler\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/layers/rnn/time_distributed.py\", line 126, in call\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/layers/rnn/time_distributed.py\", line 120, in step_function\n\n  File \"/home/nam/ImConvo/src/model.py\", line 257, in call\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 117, in error_handler\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/layers/layer.py\", line 953, in __call__\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 117, in error_handler\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/ops/operation.py\", line 59, in __call__\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 156, in error_handler\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/layers/convolutional/base_conv.py\", line 250, in call\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/layers/convolutional/base_conv.py\", line 240, in convolution_op\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/ops/nn.py\", line 1518, in conv\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/nn.py\", line 837, in conv\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/nn.py\", line 796, in _conv\n\nNo algorithm worked!  Error messages:\n  Profiling failure on CUDNN engine eng1{}: RESOURCE_EXHAUSTED: Out of memory while trying to allocate 16.01MiB. [tf-allocator-allocation-error='']\n\t [[{{node LipReadingCTC_1/frontend_resnet_td_block3_1_1/conv2d_9_147/convolution}}]] [Op:__inference_multi_step_on_iterator_425192]",
+        "traceback": "Traceback (most recent call last):\n  File \"/home/nam/ImConvo/train.py\", line 829, in main\n    main_history = model.fit(\n                   ^^^^^^^^^^\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 122, in error_handler\n    raise e.with_traceback(filtered_tb) from None\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/tensorflow/python/eager/execute.py\", line 59, in quick_execute\n    except TypeError as e:\ntensorflow.python.framework.errors_impl.NotFoundError: Graph execution error:\n\nDetected at node LipReadingCTC_1/frontend_resnet_td_block3_1_1/conv2d_9_147/convolution defined at (most recent call last):\n  File \"/home/nam/ImConvo/train.py\", line 981, in <module>\n\n  File \"/home/nam/ImConvo/train.py\", line 829, in main\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 117, in error_handler\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 399, in fit\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 241, in function\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 154, in multi_step_on_iterator\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 125, in wrapper\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 134, in one_step_on_data\n\n  File \"/home/nam/ImConvo/src/model.py\", line 660, in train_step\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 117, in error_handler\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/layers/layer.py\", line 953, in __call__\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 117, in error_handler\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/ops/operation.py\", line 59, in __call__\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 156, in error_handler\n\n  File \"/home/nam/ImConvo/src/model.py\", line 620, in call\n\n  File \"/home/nam/ImConvo/src/model.py\", line 490, in _apply_visual_frontend\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 117, in error_handler\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/layers/layer.py\", line 953, in __call__\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 117, in error_handler\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/ops/operation.py\", line 59, in __call__\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 156, in error_handler\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/layers/rnn/time_distributed.py\", line 126, in call\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/layers/rnn/time_distributed.py\", line 120, in step_function\n\n  File \"/home/nam/ImConvo/src/model.py\", line 257, in call\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 117, in error_handler\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/layers/layer.py\", line 953, in __call__\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 117, in error_handler\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/ops/operation.py\", line 59, in __call__\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 156, in error_handler\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/layers/convolutional/base_conv.py\", line 250, in call\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/layers/convolutional/base_conv.py\", line 240, in convolution_op\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/ops/nn.py\", line 1518, in conv\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/nn.py\", line 837, in conv\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/nn.py\", line 796, in _conv\n\nNo algorithm worked!  Error messages:\n  Profiling failure on CUDNN engine eng1{}: RESOURCE_EXHAUSTED: Out of memory while trying to allocate 16.01MiB. [tf-allocator-allocation-error='']\n\t [[{{node LipReadingCTC_1/frontend_resnet_td_block3_1_1/conv2d_9_147/convolution}}]] [Op:__inference_multi_step_on_iterator_425192]\n"
+      }
+    },
+    {
+      "run_id": "20260507T032516Z_conformer_lite_resnet18",
+      "status": "completed",
+      "started_at": "2026-05-07T03:25:16Z",
+      "ended_at": "2026-05-07T12:18:58Z",
+      "model_variant": "conformer_lite",
+      "frontend_model": "resnet18",
+      "augmentation_profile": "spatiotemporal",
+      "feature_time_masking": false,
+      "model_config": {
+        "backbone_dropout": 0.2,
+        "head_dropout": 0.2
+      },
+      "optimizer": {
+        "learning_rate": 0.0001,
+        "weight_decay": 0.0001,
+        "warmup_epochs": 3,
+        "scheduler": "cosine",
+        "plateau_factor": 0.5,
+        "plateau_patience": 3,
+        "min_lr": 1e-06,
+        "cosine_alpha": 0.1
+      },
+      "checkpoint_path": "/home/nam/ImConvo/checkpoints/best_ctc_model_conformer_lite_resnet18.keras",
+      "history": {
+        "loss": [
+          42.61501693725586,
+          32.14523696899414
+        ],
+        "val_loss": [
+          31.359800338745117,
+          30.927501678466797
+        ]
+      },
+      "freeze": {
+        "enabled": false,
+        "warmup_epochs": 0,
+        "warmup_freeze": "frontend",
+        "post_warmup": "full_unfreeze",
+        "transition_epoch": null
+      },
+      "eval": {
+        "val_oos": {
+          "wer": null,
+          "cer": null
+        },
+        "val_is": {
+          "wer": null,
+          "cer": null
+        }
+      },
+      "error": null
+    },
+    {
+      "run_id": "20260507T122017Z_conformer_lite_resnet18",
+      "status": "crashed",
+      "started_at": "2026-05-07T12:20:17Z",
+      "ended_at": "2026-05-07T12:29:20Z",
+      "model_variant": "conformer_lite",
+      "frontend_model": "resnet18",
+      "augmentation_profile": "spatiotemporal",
+      "feature_time_masking": false,
+      "model_config": {
+        "backbone_dropout": 0.2,
+        "head_dropout": 0.2
+      },
+      "optimizer": {
+        "learning_rate": 0.0001,
+        "weight_decay": 0.0001,
+        "warmup_epochs": 3,
+        "scheduler": "cosine",
+        "plateau_factor": 0.5,
+        "plateau_patience": 3,
+        "min_lr": 1e-06,
+        "cosine_alpha": 0.1
+      },
+      "checkpoint_path": "/home/nam/ImConvo/checkpoints/best_ctc_model_conformer_lite_resnet18.keras",
+      "history": {},
+      "freeze": {
+        "enabled": false,
+        "warmup_epochs": 0,
+        "warmup_freeze": "frontend",
+        "post_warmup": "full_unfreeze",
+        "transition_epoch": null
+      },
+      "eval": {
+        "val_oos": {
+          "wer": null,
+          "cer": null
+        },
+        "val_is": {
+          "wer": null,
+          "cer": null
+        }
+      },
+      "error": {
+        "type": "ResourceExhaustedError",
+        "message": "Graph execution error:\n\nDetected at node gradient_tape/LipReadingCTC_1/frontend_resnet_td_block2_1_1/strided_slice_70/StridedSliceGrad defined at (most recent call last):\n  File \"/home/nam/ImConvo/train.py\", line 981, in <module>\n\n  File \"/home/nam/ImConvo/train.py\", line 829, in main\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 117, in error_handler\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 399, in fit\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 241, in function\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 154, in multi_step_on_iterator\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 125, in wrapper\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 134, in one_step_on_data\n\n  File \"/home/nam/ImConvo/src/model.py\", line 663, in train_step\n\nOOM when allocating tensor with shape[75,16,20,30,64] and type float on /job:localhost/replica:0/task:0/device:GPU:0 by allocator GPU_0_bfc\n\t [[{{node gradient_tape/LipReadingCTC_1/frontend_resnet_td_block2_1_1/strided_slice_70/StridedSliceGrad}}]]\nHint: If you want to see a list of allocated tensors when OOM happens, add report_tensor_allocations_upon_oom to RunOptions for current allocation info. This isn't available when running in Eager mode.\n [Op:__inference_multi_step_on_iterator_425319]",
+        "traceback": "Traceback (most recent call last):\n  File \"/home/nam/ImConvo/train.py\", line 829, in main\n    main_history = model.fit(\n                   ^^^^^^^^^^\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 122, in error_handler\n    raise e.with_traceback(filtered_tb) from None\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/tensorflow/python/eager/execute.py\", line 59, in quick_execute\n    except TypeError as e:\ntensorflow.python.framework.errors_impl.ResourceExhaustedError: Graph execution error:\n\nDetected at node gradient_tape/LipReadingCTC_1/frontend_resnet_td_block2_1_1/strided_slice_70/StridedSliceGrad defined at (most recent call last):\n  File \"/home/nam/ImConvo/train.py\", line 981, in <module>\n\n  File \"/home/nam/ImConvo/train.py\", line 829, in main\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 117, in error_handler\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 399, in fit\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 241, in function\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 154, in multi_step_on_iterator\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 125, in wrapper\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 134, in one_step_on_data\n\n  File \"/home/nam/ImConvo/src/model.py\", line 663, in train_step\n\nOOM when allocating tensor with shape[75,16,20,30,64] and type float on /job:localhost/replica:0/task:0/device:GPU:0 by allocator GPU_0_bfc\n\t [[{{node gradient_tape/LipReadingCTC_1/frontend_resnet_td_block2_1_1/strided_slice_70/StridedSliceGrad}}]]\nHint: If you want to see a list of allocated tensors when OOM happens, add report_tensor_allocations_upon_oom to RunOptions for current allocation info. This isn't available when running in Eager mode.\n [Op:__inference_multi_step_on_iterator_425319]\n"
+      }
+    },
+    {
+      "run_id": "20260507T123158Z_conformer_lite_resnet18",
+      "status": "crashed",
+      "started_at": "2026-05-07T12:31:58Z",
+      "ended_at": "2026-05-07T12:37:00Z",
+      "model_variant": "conformer_lite",
+      "frontend_model": "resnet18",
+      "augmentation_profile": "spatiotemporal",
+      "feature_time_masking": false,
+      "model_config": {
+        "backbone_dropout": 0.2,
+        "head_dropout": 0.2
+      },
+      "optimizer": {
+        "learning_rate": 0.0001,
+        "weight_decay": 0.0001,
+        "warmup_epochs": 3,
+        "scheduler": "cosine",
+        "plateau_factor": 0.5,
+        "plateau_patience": 3,
+        "min_lr": 1e-06,
+        "cosine_alpha": 0.1
+      },
+      "checkpoint_path": "/home/nam/ImConvo/checkpoints/best_ctc_model_conformer_lite_resnet18.keras",
+      "history": {},
+      "freeze": {
+        "enabled": false,
+        "warmup_epochs": 0,
+        "warmup_freeze": "frontend",
+        "post_warmup": "full_unfreeze",
+        "transition_epoch": null
+      },
+      "eval": {
+        "val_oos": {
+          "wer": null,
+          "cer": null
+        },
+        "val_is": {
+          "wer": null,
+          "cer": null
+        }
+      },
+      "error": {
+        "type": "ResourceExhaustedError",
+        "message": "Graph execution error:\n\nDetected at node gradient_tape/LipReadingCTC_1/frontend_resnet_td_block2_1_1/strided_slice_68/StridedSliceGrad defined at (most recent call last):\n  File \"/home/nam/ImConvo/train.py\", line 981, in <module>\n\n  File \"/home/nam/ImConvo/train.py\", line 829, in main\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 117, in error_handler\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 399, in fit\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 241, in function\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 154, in multi_step_on_iterator\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 125, in wrapper\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 134, in one_step_on_data\n\n  File \"/home/nam/ImConvo/src/model.py\", line 663, in train_step\n\nOOM when allocating tensor with shape[75,12,20,30,64] and type float on /job:localhost/replica:0/task:0/device:GPU:0 by allocator GPU_0_bfc\n\t [[{{node gradient_tape/LipReadingCTC_1/frontend_resnet_td_block2_1_1/strided_slice_68/StridedSliceGrad}}]]\nHint: If you want to see a list of allocated tensors when OOM happens, add report_tensor_allocations_upon_oom to RunOptions for current allocation info. This isn't available when running in Eager mode.\n [Op:__inference_multi_step_on_iterator_425307]",
+        "traceback": "Traceback (most recent call last):\n  File \"/home/nam/ImConvo/train.py\", line 829, in main\n    main_history = model.fit(\n                   ^^^^^^^^^^\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 122, in error_handler\n    raise e.with_traceback(filtered_tb) from None\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/tensorflow/python/eager/execute.py\", line 59, in quick_execute\n    except TypeError as e:\ntensorflow.python.framework.errors_impl.ResourceExhaustedError: Graph execution error:\n\nDetected at node gradient_tape/LipReadingCTC_1/frontend_resnet_td_block2_1_1/strided_slice_68/StridedSliceGrad defined at (most recent call last):\n  File \"/home/nam/ImConvo/train.py\", line 981, in <module>\n\n  File \"/home/nam/ImConvo/train.py\", line 829, in main\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/utils/traceback_utils.py\", line 117, in error_handler\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 399, in fit\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 241, in function\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 154, in multi_step_on_iterator\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 125, in wrapper\n\n  File \"/home/nam/ImConvo/.venv/lib/python3.12/site-packages/keras/src/backend/tensorflow/trainer.py\", line 134, in one_step_on_data\n\n  File \"/home/nam/ImConvo/src/model.py\", line 663, in train_step\n\nOOM when allocating tensor with shape[75,12,20,30,64] and type float on /job:localhost/replica:0/task:0/device:GPU:0 by allocator GPU_0_bfc\n\t [[{{node gradient_tape/LipReadingCTC_1/frontend_resnet_td_block2_1_1/strided_slice_68/StridedSliceGrad}}]]\nHint: If you want to see a list of allocated tensors when OOM happens, add report_tensor_allocations_upon_oom to RunOptions for current allocation info. This isn't available when running in Eager mode.\n [Op:__inference_multi_step_on_iterator_425307]\n"
+      }
+    },
+    {
+      "run_id": "20260507T123917Z_conformer_lite_resnet18",
+      "status": "completed",
+      "started_at": "2026-05-07T12:39:17Z",
+      "ended_at": "2026-05-08T02:05:11Z",
+      "model_variant": "conformer_lite",
+      "frontend_model": "resnet18",
+      "augmentation_profile": "spatiotemporal",
+      "feature_time_masking": false,
+      "model_config": {
+        "backbone_dropout": 0.2,
+        "head_dropout": 0.2
+      },
+      "optimizer": {
+        "learning_rate": 0.0001,
+        "weight_decay": 0.0001,
+        "warmup_epochs": 3,
+        "scheduler": "cosine",
+        "plateau_factor": 0.5,
+        "plateau_patience": 3,
+        "min_lr": 1e-06,
+        "cosine_alpha": 0.1
+      },
+      "checkpoint_path": "/home/nam/ImConvo/checkpoints/best_ctc_model_conformer_lite_resnet18.keras",
+      "history": {
+        "loss": [
+          31.34308433532715,
+          31.052194595336914,
+          31.08139419555664
+        ],
+        "val_loss": [
+          30.852582931518555,
+          30.861059188842773,
+          30.814302444458008
+        ]
+      },
+      "freeze": {
+        "enabled": false,
+        "warmup_epochs": 0,
+        "warmup_freeze": "frontend",
+        "post_warmup": "full_unfreeze",
+        "transition_epoch": null
+      },
+      "eval": {
+        "val_oos": {
+          "wer": null,
+          "cer": null
+        },
+        "val_is": {
+          "wer": null,
+          "cer": null
+        }
+      },
+      "error": null
     }
   ],
   "freeze": {
@@ -1565,85 +1817,25 @@
   },
   "eval": {
     "val_oos": {
-      "wer": 0.153833333333333,
-      "cer": 0.0668473057707107
+      "wer": null,
+      "cer": null
     },
     "val_is": {
-      "wer": 0.1575757575757576,
-      "cer": 0.06337011135162056
+      "wer": null,
+      "cer": null
     }
   },
-  "last_run_id": "20260506T093015Z_conformer_lite_gap_proj",
+  "last_run_id": "20260507T123917Z_conformer_lite_resnet18",
   "last_status": "completed",
   "loss": [
-    52.40095138549805,
-    36.55299377441406,
-    32.918025970458984,
-    31.848529815673828,
-    30.158811569213867,
-    28.589996337890625,
-    26.357324600219727,
-    23.06625747680664,
-    19.877195358276367,
-    16.865468978881836,
-    14.420388221740723,
-    12.276525497436523,
-    10.848388671875,
-    9.761016845703125,
-    8.858519554138184,
-    8.128440856933594,
-    7.571793556213379,
-    7.00881290435791,
-    6.6214070320129395,
-    6.219102382659912,
-    5.896265029907227,
-    5.616356372833252,
-    5.401181697845459,
-    5.15631628036499,
-    4.9902567863464355,
-    4.746666431427002,
-    4.615704536437988,
-    4.494019508361816,
-    4.3022050857543945,
-    4.173091411590576,
-    4.032485008239746,
-    3.9310221672058105,
-    3.7585809230804443
+    31.34308433532715,
+    31.052194595336914,
+    31.08139419555664
   ],
   "val_loss": [
-    48.934417724609375,
-    31.271806716918945,
-    30.940502166748047,
-    28.512264251708984,
-    27.072893142700195,
-    27.860313415527344,
-    28.197744369506836,
-    20.266178131103516,
-    17.764545440673828,
-    12.905845642089844,
-    11.940566062927246,
-    8.63945198059082,
-    11.617321968078613,
-    10.277504920959473,
-    13.260429382324219,
-    6.392882347106934,
-    20.53818702697754,
-    10.441057205200195,
-    9.521934509277344,
-    14.423179626464844,
-    10.559592247009277,
-    12.670186042785645,
-    9.515013694763184,
-    5.997903823852539,
-    10.65754222869873,
-    10.3035888671875,
-    7.8936896324157715,
-    7.0686469078063965,
-    9.500956535339355,
-    12.205537796020508,
-    9.287915229797363,
-    9.386833190917969,
-    7.623824119567871
+    30.852582931518555,
+    30.861059188842773,
+    30.814302444458008
   ],
   "learning_rate": [
     9.999999747378752e-05,
@@ -1676,6 +1868,6 @@
     "cosine_alpha": 0.1
   },
   "frontend": {
-    "model": "gap_proj"
+    "model": "resnet18"
   }
 }
