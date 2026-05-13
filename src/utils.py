@@ -2,28 +2,31 @@
 Shared constants, vocabulary, and video processing utilities
 for the GRID lip reading corpus.
 
-Uses OpenCV's Haar cascade face detector for dynamic lip region
-detection instead of hardcoded pixel coordinates, so the crop
-adapts to each speaker's face position and size.
+Uses MediaPipe Face Mesh for precise lip landmark detection —
+yields a tight, speaker-adaptive lip crop on every frame.
 """
 
 import glob
 import os
 
+import urllib.request
+from pathlib import Path
+
 import cv2
+import mediapipe as mp
 import numpy as np
 
 # ---------------------------------------------------------------------------
 # Video processing constants
 # ---------------------------------------------------------------------------
 
-# Legacy hardcoded lip region (used as fallback when face detection fails)
+# Fallback region (used only when MediaPipe detects no face at all)
 FALLBACK_LIP_Y_START = 190
 FALLBACK_LIP_Y_END = 270
 FALLBACK_LIP_X_START = 120
 FALLBACK_LIP_X_END = 240
 
-# Keep old names as aliases for backward compatibility (inference.py uses them)
+# Legacy aliases kept for inference.py webcam overlay
 LIP_Y_START = FALLBACK_LIP_Y_START
 LIP_Y_END = FALLBACK_LIP_Y_END
 LIP_X_START = FALLBACK_LIP_X_START
@@ -33,21 +36,90 @@ FRAME_HEIGHT = 80
 FRAME_WIDTH = 120
 MAX_FRAMES = 75
 
-# --- Face / mouth crop parameters ---
-# The mouth region is estimated as a sub-region of the detected face bbox.
-# These ratios define where the mouth sits within the face bounding box.
-# (Validated against the GRID corpus and standard lip-reading literature)
-MOUTH_TOP_RATIO = 0.65      # mouth starts at 65% of face height from the top
-MOUTH_BOTTOM_RATIO = 0.95   # mouth ends at 95% of face height
-MOUTH_LEFT_RATIO = 0.20     # mouth starts at 20% from the left of face
-MOUTH_RIGHT_RATIO = 0.80    # mouth ends at 80% from the right of face
+# Padding around the MediaPipe lip bounding box (fraction of lip size)
+LIP_PAD_X = 0.25
+LIP_PAD_Y = 0.35
 
-# Padding around the estimated mouth region (fraction of mouth bbox)
-MOUTH_PAD_X = 0.10  # 10% extra on each side horizontally
-MOUTH_PAD_Y = 0.10  # 10% extra vertically
+# ---------------------------------------------------------------------------
+# MediaPipe FaceLandmarker (Tasks API, mediapipe >= 0.10)
+# ---------------------------------------------------------------------------
 
-# Minimum face size for detection (pixels)
-MIN_FACE_SIZE = 30
+# Lip landmark indices from the 478-point FaceLandmarker model
+_LIP_LANDMARK_INDICES: list[int] = [
+    # outer upper lip
+    61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291,
+    # outer lower lip
+    146, 91, 181, 84, 17, 314, 405, 321, 375,
+    # inner upper lip
+    78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308,
+    # inner lower lip
+    95, 88, 178, 87, 14, 317, 402, 318, 324,
+]
+
+_FACE_LANDMARKER_MODEL_URL = (
+    "https://storage.googleapis.com/mediapipe-models/"
+    "face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+)
+_FACE_LANDMARKER_MODEL_PATH = Path(__file__).resolve().parent.parent / "temp_reports" / "face_landmarker.task"
+
+_FACE_LANDMARKER: "mp.tasks.vision.FaceLandmarker | None" = None
+
+
+def _get_face_landmarker() -> "mp.tasks.vision.FaceLandmarker":
+    global _FACE_LANDMARKER
+    if _FACE_LANDMARKER is not None:
+        return _FACE_LANDMARKER
+
+    model_path = _FACE_LANDMARKER_MODEL_PATH
+    if not model_path.exists():
+        model_path.parent.mkdir(parents=True, exist_ok=True)
+        print(f"[MediaPipe] Downloading face_landmarker model to {model_path} ...")
+        urllib.request.urlretrieve(_FACE_LANDMARKER_MODEL_URL, model_path)
+        print("[MediaPipe] Download complete.")
+
+    BaseOptions = mp.tasks.BaseOptions
+    FaceLandmarker = mp.tasks.vision.FaceLandmarker
+    FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
+    VisionRunningMode = mp.tasks.vision.RunningMode
+
+    options = FaceLandmarkerOptions(
+        base_options=BaseOptions(model_asset_path=str(model_path)),
+        running_mode=VisionRunningMode.IMAGE,
+        num_faces=1,
+        min_face_detection_confidence=0.4,
+        min_face_presence_confidence=0.4,
+    )
+    _FACE_LANDMARKER = FaceLandmarker.create_from_options(options)
+    return _FACE_LANDMARKER
+
+
+def _mediapipe_lip_bbox(
+    bgr_frame: np.ndarray,
+) -> "tuple[int, int, int, int] | None":
+    """Return (x_start, y_start, x_end, y_end) for the lip region, or None."""
+    h, w = bgr_frame.shape[:2]
+    rgb = cv2.cvtColor(bgr_frame, cv2.COLOR_BGR2RGB)
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+    result = _get_face_landmarker().detect(mp_image)
+
+    if not result.face_landmarks:
+        return None
+
+    landmarks = result.face_landmarks[0]
+    xs = [landmarks[i].x * w for i in _LIP_LANDMARK_INDICES]
+    ys = [landmarks[i].y * h for i in _LIP_LANDMARK_INDICES]
+
+    x_min, x_max = min(xs), max(xs)
+    y_min, y_max = min(ys), max(ys)
+    lip_w = x_max - x_min
+    lip_h = y_max - y_min
+
+    x_start = max(0, int(x_min - lip_w * LIP_PAD_X))
+    x_end   = min(w, int(x_max + lip_w * LIP_PAD_X))
+    y_start = max(0, int(y_min - lip_h * LIP_PAD_Y))
+    y_end   = min(h, int(y_max + lip_h * LIP_PAD_Y))
+
+    return (x_start, y_start, x_end, y_end)
 
 # ---------------------------------------------------------------------------
 # Character-level vocabulary (for CTC)
@@ -128,103 +200,25 @@ def parse_alignment_chars(align_path: str) -> tuple:
 
 
 # ---------------------------------------------------------------------------
-# Smart lip detection with OpenCV Haar Cascade
+# Video lip extraction using MediaPipe 
 # ---------------------------------------------------------------------------
 
-# Load cascade classifiers once at module level (ordered by speed → sensitivity)
-_cascades = [
-    # (cascade, scaleFactor, minNeighbors) — tried in order
-    (cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml"), 1.1, 3),
-    (cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_alt2.xml"), 1.05, 2),
-    (cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_alt.xml"), 1.1, 3),
-]
-
-
-def _detect_face(gray_frame: np.ndarray):
-    """
-    Detect the largest face in a grayscale frame using cascading Haar classifiers.
-
-    Tries multiple cascades with progressively more sensitive settings
-    to maximize detection rate across different speakers.
-
-    Returns:
-        (x, y, w, h) of the largest face, or None if no face is detected.
-    """
-    for cascade, scale_factor, min_neighbors in _cascades:
-        faces = cascade.detectMultiScale(
-            gray_frame,
-            scaleFactor=scale_factor,
-            minNeighbors=min_neighbors,
-            minSize=(MIN_FACE_SIZE, MIN_FACE_SIZE),
-            flags=cv2.CASCADE_SCALE_IMAGE,
-        )
-        if len(faces) > 0:
-            # Return the largest face (by area)
-            areas = [w * h for (x, y, w, h) in faces]
-            best_idx = np.argmax(areas)
-            return tuple(faces[best_idx])
-
-    return None
-
-
-def _face_to_mouth_bbox(face_bbox, frame_h: int, frame_w: int):
-    """
-    Estimate the mouth bounding box from a face bounding box.
-
-    The mouth is typically located in the lower-middle portion of the face.
-    We use configurable ratios to extract this region with padding.
-
-    Args:
-        face_bbox: (x, y, w, h) of the face.
-        frame_h: Frame height in pixels.
-        frame_w: Frame width in pixels.
-
-    Returns:
-        (x_start, y_start, x_end, y_end) of the mouth region.
-    """
-    fx, fy, fw, fh = face_bbox
-
-    # Estimate mouth region within the face bbox
-    mouth_x_start = fx + int(fw * MOUTH_LEFT_RATIO)
-    mouth_x_end = fx + int(fw * MOUTH_RIGHT_RATIO)
-    mouth_y_start = fy + int(fh * MOUTH_TOP_RATIO)
-    mouth_y_end = fy + int(fh * MOUTH_BOTTOM_RATIO)
-
-    # Add padding
-    mouth_w = mouth_x_end - mouth_x_start
-    mouth_h = mouth_y_end - mouth_y_start
-    pad_x = int(mouth_w * MOUTH_PAD_X)
-    pad_y = int(mouth_h * MOUTH_PAD_Y)
-
-    x_start = max(0, mouth_x_start - pad_x)
-    y_start = max(0, mouth_y_start - pad_y)
-    x_end = min(frame_w, mouth_x_end + pad_x)
-    y_end = min(frame_h, mouth_y_end + pad_y)
-
-    return (x_start, y_start, x_end, y_end)
-
-
-def extract_lip_frames(video_path: str) -> np.ndarray:
-    """
-    Load video, detect face, crop lip region dynamically,
-    convert to grayscale, resize, and normalize.
+def extract_lip_frames(video_path: str) -> "np.ndarray | None":
+    """Load video, detect lip landmarks with MediaPipe, crop, resize, normalise.
 
     Strategy:
-        1. Read all frames from the video.
-        2. Detect faces in a sample of frames (every Nth frame for speed).
-        3. Compute the median mouth bounding box across all detections
-           for a stable, jitter-free crop.
-        4. If no face is detected in any frame, fall back to the legacy
-           hardcoded coordinates.
-        5. Crop all frames using the stable bounding box.
+        1. Read all frames.
+        2. Run MediaPipe on a sparse sample (~10 frames) for speed.
+        3. If detection rate < 50 %, retry on every frame.
+        4. Take the median bounding box across detections for a stable crop.
+        5. Crop + grayscale + resize every frame to (FRAME_HEIGHT, FRAME_WIDTH).
 
     Returns:
-        np.ndarray of shape (MAX_FRAMES, FRAME_HEIGHT, FRAME_WIDTH), float32 in [0, 1].
+        float32 array of shape (MAX_FRAMES, FRAME_HEIGHT, FRAME_WIDTH) in [0, 1],
+        or None if no face is detected.
     """
-    frames = []
-    raw_frames = []
+    raw_frames: list[np.ndarray] = []
 
-    # --- Pass 1: Read all frames ---
     cap = cv2.VideoCapture(video_path)
     while True:
         ret, frame = cap.read()
@@ -233,93 +227,70 @@ def extract_lip_frames(video_path: str) -> np.ndarray:
         raw_frames.append(frame)
     cap.release()
 
-    if len(raw_frames) == 0:
+    if not raw_frames:
         return np.zeros((MAX_FRAMES, FRAME_HEIGHT, FRAME_WIDTH), dtype=np.float32)
 
     frame_h, frame_w = raw_frames[0].shape[:2]
 
-    # --- Pass 2: Detect faces in sampled frames ---
-    # Sample ~10 evenly-spaced frames for face detection
+    # --- Pass 2: detect lip bbox on sampled frames ---
     sample_interval = max(1, len(raw_frames) // 10)
-    mouth_bboxes = []
+    lip_bboxes: list[tuple[int, int, int, int]] = []
 
     for i in range(0, len(raw_frames), sample_interval):
-        gray = cv2.cvtColor(raw_frames[i], cv2.COLOR_BGR2GRAY)
-        face = _detect_face(gray)
-        if face is not None:
-            mouth_bbox = _face_to_mouth_bbox(face, frame_h, frame_w)
-            mouth_bboxes.append(mouth_bbox)
+        bbox = _mediapipe_lip_bbox(raw_frames[i])
+        if bbox is not None:
+            lip_bboxes.append(bbox)
 
-    # If detection rate is low, retry on ALL frames
+    # Retry on all frames if detection rate is low
     num_sampled = len(range(0, len(raw_frames), sample_interval))
-    if len(mouth_bboxes) < num_sampled * 0.5 and sample_interval > 1:
-        mouth_bboxes = []
-        for i in range(len(raw_frames)):
-            gray = cv2.cvtColor(raw_frames[i], cv2.COLOR_BGR2GRAY)
-            face = _detect_face(gray)
-            if face is not None:
-                mouth_bbox = _face_to_mouth_bbox(face, frame_h, frame_w)
-                mouth_bboxes.append(mouth_bbox)
+    if len(lip_bboxes) < num_sampled * 0.5 and sample_interval > 1:
+        lip_bboxes = []
+        for frame in raw_frames:
+            bbox = _mediapipe_lip_bbox(frame)
+            if bbox is not None:
+                lip_bboxes.append(bbox)
 
-    # --- Compute stable crop region ---
-    if len(mouth_bboxes) > 0:
-        # Use median of detected mouth bboxes for stability
-        all_x_starts = [b[0] for b in mouth_bboxes]
-        all_y_starts = [b[1] for b in mouth_bboxes]
-        all_x_ends   = [b[2] for b in mouth_bboxes]
-        all_y_ends   = [b[3] for b in mouth_bboxes]
-
-        x_start = int(np.median(all_x_starts))
-        y_start = int(np.median(all_y_starts))
-        x_end   = int(np.median(all_x_ends))
-        y_end   = int(np.median(all_y_ends))
-
-        # Clamp to frame boundaries
-        x_start = max(0, x_start)
-        y_start = max(0, y_start)
-        x_end   = min(frame_w, x_end)
-        y_end   = min(frame_h, y_end)
-
-        detection_rate = len(mouth_bboxes) / max(1, len(raw_frames) // sample_interval)
-        if detection_rate < 0.5:
-            basename = os.path.basename(video_path)
-            print(f"  [WARN] {basename}: face detected in only "
-                  f"{detection_rate*100:.0f}% of sampled frames")
-    else:
-        # No face detected — skip this sample
-        basename = os.path.basename(video_path)
-        print(f"  [SKIP] {basename}: no face detected in any frame")
+    if not lip_bboxes:
+        print(f"  [SKIP] {os.path.basename(video_path)}: no face detected")
         return None
 
-    # --- Pass 3: Crop, grayscale, resize ---
+    # Median bbox for stability across frames
+    x_start = max(0,       int(np.median([b[0] for b in lip_bboxes])))
+    y_start = max(0,       int(np.median([b[1] for b in lip_bboxes])))
+    x_end   = min(frame_w, int(np.median([b[2] for b in lip_bboxes])))
+    y_end   = min(frame_h, int(np.median([b[3] for b in lip_bboxes])))
+
+    detection_rate = len(lip_bboxes) / max(1, num_sampled)
+    if detection_rate < 0.5:
+        print(f"  [WARN] {os.path.basename(video_path)}: face detected in "
+              f"{detection_rate*100:.0f}% of sampled frames")
+
+    # --- Pass 3: crop, grayscale, resize ---
+    frames: list[np.ndarray] = []
     for frame in raw_frames:
-    # Ensure the crop is within the actual frame dimensions
-        y1, y2 = max(0, y_start), min(frame.shape[0], y_end)
-        x1, x2 = max(0, x_start), min(frame.shape[1], x_end)
-        
+        y1 = max(0, y_start)
+        y2 = min(frame.shape[0], y_end)
+        x1 = max(0, x_start)
+        x2 = min(frame.shape[1], x_end)
+
         lip = frame[y1:y2, x1:x2]
-        
-        # If for some reason the crop is still empty, use a black frame 
-        # instead of 'continue' to keep the timing consistent.
         if lip.size == 0:
             lip_resized = np.zeros((FRAME_HEIGHT, FRAME_WIDTH), dtype=np.uint8)
         else:
             lip_gray = cv2.cvtColor(lip, cv2.COLOR_BGR2GRAY)
             lip_resized = cv2.resize(lip_gray, (FRAME_WIDTH, FRAME_HEIGHT))
-            
         frames.append(lip_resized)
 
-    if len(frames) == 0:
+    if not frames:
         return None
 
-    frames = np.array(frames, dtype=np.float32) / 255.0
+    out = np.array(frames, dtype=np.float32) / 255.0
 
-    # Pad or truncate
-    T = frames.shape[0]
+    T = out.shape[0]
     if T < MAX_FRAMES:
         pad = np.zeros((MAX_FRAMES - T, FRAME_HEIGHT, FRAME_WIDTH), dtype=np.float32)
-        frames = np.concatenate([frames, pad], axis=0)
+        out = np.concatenate([out, pad], axis=0)
     else:
-        frames = frames[:MAX_FRAMES]
+        out = out[:MAX_FRAMES]
 
-    return frames
+    return out
