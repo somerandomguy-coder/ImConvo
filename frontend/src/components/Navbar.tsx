@@ -13,9 +13,11 @@ export default function Navbar() {
           ImConvo
         </Link>
         <div className="flex items-center gap-6 text-sm text-muted">
-          <Link href="/demo/inference" className="transition-colors hover:text-foreground">
-            Demo
-          </Link>
+          {process.env.NODE_ENV === "development" && (
+            <Link href="/demo/inference" className="transition-colors hover:text-foreground">
+              Demo
+            </Link>
+          )}
           <a
             href="https://github.com/somerandomguy-coder/ImConvo/"
             target="_blank"

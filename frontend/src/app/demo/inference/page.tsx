@@ -2,14 +2,18 @@
 
 import { useEffect, useState } from "react";
 import DemoResultPanel from "@/components/demo/DemoResultPanel";
+import WordResultPanel from "@/components/demo/WordResultPanel";
 import DemoVideoUploader from "@/components/demo/DemoVideoUploader";
 import {
   analyzeDemoExample,
   analyzeDemoVideo,
+  analyzeWordVideo,
+  analyzeWordExample,
   checkDemoHealth,
   listDecoders,
   listDemoExamples,
   type AnalyzeResponse,
+  type WordAnalyzeResponse,
   type DecoderSpec,
   type HealthStatus,
 } from "@/utils/demoApi";
@@ -19,12 +23,16 @@ const DEFAULT_DECODER_MODE = "greedy_ctc";
 const DEFAULT_BEAM_WIDTH = 10;
 const DEFAULT_DEBUG_TOP_K = 5;
 
+type Mode = "character" | "word";
+
 export default function DemoInferencePage() {
+  const [mode, setMode] = useState<Mode>("character");
   const [file, setFile] = useState<File | null>(null);
   const [modelPath, setModelPath] = useState(DEFAULT_MODEL_PATH);
   const [expectedText, setExpectedText] = useState("");
   const [health, setHealth] = useState<HealthStatus | null>(null);
-  const [result, setResult] = useState<AnalyzeResponse | null>(null);
+  const [ctcResult, setCtcResult] = useState<AnalyzeResponse | null>(null);
+  const [wordResult, setWordResult] = useState<WordAnalyzeResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [examples, setExamples] = useState<string[]>([]);
@@ -60,31 +68,28 @@ export default function DemoInferencePage() {
     return () => { mounted = false; };
   }, []);
 
+  const extractError = (err: unknown) =>
+    (typeof err === "object" && err && "response" in err &&
+      typeof (err as { response?: { data?: { detail?: string } } }).response?.data?.detail === "string" &&
+      (err as { response?: { data?: { detail?: string } } }).response?.data?.detail) ||
+    (err instanceof Error ? err.message : "Inference request failed.");
+
   const runInference = async () => {
     if (!file) return;
     setError(null);
-    setResult(null);
+    setCtcResult(null);
+    setWordResult(null);
     setIsLoading(true);
     try {
-      const analyzed = await analyzeDemoVideo({
-        file,
-        modelPath,
-        expectedText,
-        decoderMode,
-        beamWidth,
-        debugTopK: DEFAULT_DEBUG_TOP_K,
-        llmPostprocess,
-      });
-      setResult(analyzed);
-    } catch (err: unknown) {
-      const message =
-        (typeof err === "object" &&
-          err &&
-          "response" in err &&
-          typeof (err as { response?: { data?: { detail?: string } } }).response?.data?.detail === "string" &&
-          (err as { response?: { data?: { detail?: string } } }).response?.data?.detail) ||
-        (err instanceof Error ? err.message : "Inference request failed.");
-      setError(message);
+      if (mode === "word") {
+        const res = await analyzeWordVideo(file, undefined);
+        setWordResult(res);
+      } else {
+        const res = await analyzeDemoVideo({ file, modelPath, expectedText, decoderMode, beamWidth, debugTopK: DEFAULT_DEBUG_TOP_K, llmPostprocess });
+        setCtcResult(res);
+      }
+    } catch (err) {
+      setError(extractError(err));
     } finally {
       setIsLoading(false);
     }
@@ -93,29 +98,20 @@ export default function DemoInferencePage() {
   const runExampleInference = async () => {
     if (!selectedExample) return;
     setError(null);
-    setResult(null);
+    setCtcResult(null);
+    setWordResult(null);
     setIsLoading(true);
     setFile(null);
     try {
-      const analyzed = await analyzeDemoExample({
-        exampleName: selectedExample,
-        modelPath,
-        expectedText,
-        decoderMode,
-        beamWidth,
-        debugTopK: DEFAULT_DEBUG_TOP_K,
-        llmPostprocess,
-      });
-      setResult(analyzed);
-    } catch (err: unknown) {
-      const message =
-        (typeof err === "object" &&
-          err &&
-          "response" in err &&
-          typeof (err as { response?: { data?: { detail?: string } } }).response?.data?.detail === "string" &&
-          (err as { response?: { data?: { detail?: string } } }).response?.data?.detail) ||
-        (err instanceof Error ? err.message : "Example inference request failed.");
-      setError(message);
+      if (mode === "word") {
+        const res = await analyzeWordExample(selectedExample);
+        setWordResult(res);
+      } else {
+        const res = await analyzeDemoExample({ exampleName: selectedExample, modelPath, expectedText, decoderMode, beamWidth, debugTopK: DEFAULT_DEBUG_TOP_K, llmPostprocess });
+        setCtcResult(res);
+      }
+    } catch (err) {
+      setError(extractError(err));
     } finally {
       setIsLoading(false);
     }
@@ -124,7 +120,8 @@ export default function DemoInferencePage() {
   const reset = () => {
     setFile(null);
     setExpectedText("");
-    setResult(null);
+    setCtcResult(null);
+    setWordResult(null);
     setError(null);
   };
 
@@ -136,83 +133,69 @@ export default function DemoInferencePage() {
       <div className="w-full max-w-3xl space-y-6">
         {/* Page header */}
         <div className="space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            Demo Inference
-          </h1>
-          <p className="text-sm text-muted">
-            Run offline lip-reading with metrics, latency, and device info.
-          </p>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Demo Inference</h1>
+          <p className="text-sm text-muted">Run offline lip-reading with metrics, latency, and device info.</p>
+        </div>
+
+        {/* Mode toggle */}
+        <div className="flex rounded-lg border border-border bg-card p-1 w-fit">
+          {(["character", "word"] as Mode[]).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => { setMode(m); reset(); }}
+              className={`rounded-md px-5 py-1.5 text-sm font-medium transition-colors ${
+                mode === m
+                  ? "bg-accent text-white shadow-sm"
+                  : "text-muted hover:text-foreground"
+              }`}
+            >
+              {m === "character" ? "Character (CTC)" : "Word (GRID)"}
+            </button>
+          ))}
         </div>
 
         {/* Settings panel */}
         <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-5">
           <p className="text-xs font-medium uppercase tracking-wider text-muted">Settings</p>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="space-y-1.5">
-              <span className="text-xs text-muted">Model path</span>
-              <input
-                value={modelPath}
-                onChange={(e) => setModelPath(e.target.value)}
-                className={inputClass}
-                placeholder={DEFAULT_MODEL_PATH}
-              />
-            </label>
-
-            <label className="space-y-1.5">
-              <span className="text-xs text-muted">Expected text (optional)</span>
-              <input
-                value={expectedText}
-                onChange={(e) => setExpectedText(e.target.value)}
-                className={inputClass}
-                placeholder="For WER/CER scoring"
-              />
-            </label>
-
-            <label className="space-y-1.5">
-              <span className="text-xs text-muted">Decoder</span>
-              <select
-                value={decoderMode}
-                onChange={(e) => setDecoderMode(e.target.value)}
-                className={inputClass}
-              >
-                {decoders.length === 0 && (
-                  <option value={DEFAULT_DECODER_MODE}>Greedy CTC</option>
-                )}
-                {decoders.map((d) => (
-                  <option key={d.mode} value={d.mode}>{d.label}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-1.5">
-              <span className="text-xs text-muted">Beam width</span>
-              <input
-                type="number"
-                min={2}
-                step={1}
-                value={beamWidth}
-                onChange={(e) => setBeamWidth(Number(e.target.value) || DEFAULT_BEAM_WIDTH)}
-                className={inputClass}
-                disabled={decoderMode !== "beam_ctc"}
-              />
-            </label>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-6 border-t border-border pt-4">
-            <label className="flex cursor-pointer items-center gap-2.5 select-none">
-              <input
-                type="checkbox"
-                checked={llmPostprocess}
-                onChange={(e) => setLlmPostprocess(e.target.checked)}
-                className="h-4 w-4 rounded border-border accent-accent"
-              />
-              <span className="text-sm text-foreground">LLM post-processing (Gemini)</span>
-            </label>
-            {llmPostprocess && (
-              <p className="text-xs text-muted">API key from server <code>.env</code></p>
-            )}
-          </div>
+          {mode === "character" ? (
+            <>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="space-y-1.5">
+                  <span className="text-xs text-muted">Model path</span>
+                  <input value={modelPath} onChange={(e) => setModelPath(e.target.value)} className={inputClass} placeholder={DEFAULT_MODEL_PATH} />
+                </label>
+                <label className="space-y-1.5">
+                  <span className="text-xs text-muted">Expected text (optional)</span>
+                  <input value={expectedText} onChange={(e) => setExpectedText(e.target.value)} className={inputClass} placeholder="For WER/CER scoring" />
+                </label>
+                <label className="space-y-1.5">
+                  <span className="text-xs text-muted">Decoder</span>
+                  <select value={decoderMode} onChange={(e) => setDecoderMode(e.target.value)} className={inputClass}>
+                    {decoders.length === 0 && <option value={DEFAULT_DECODER_MODE}>Greedy CTC</option>}
+                    {decoders.map((d) => <option key={d.mode} value={d.mode}>{d.label}</option>)}
+                  </select>
+                </label>
+                <label className="space-y-1.5">
+                  <span className="text-xs text-muted">Beam width</span>
+                  <input type="number" min={2} step={1} value={beamWidth} onChange={(e) => setBeamWidth(Number(e.target.value) || DEFAULT_BEAM_WIDTH)} className={inputClass} disabled={decoderMode !== "beam_ctc"} />
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-6 border-t border-border pt-4">
+                <label className="flex cursor-pointer items-center gap-2.5 select-none">
+                  <input type="checkbox" checked={llmPostprocess} onChange={(e) => setLlmPostprocess(e.target.checked)} className="h-4 w-4 rounded border-border accent-accent" />
+                  <span className="text-sm text-foreground">LLM post-processing (Gemini)</span>
+                </label>
+                {llmPostprocess && <p className="text-xs text-muted">API key from server <code>.env</code></p>}
+              </div>
+            </>
+          ) : (
+            <div className="text-sm text-muted space-y-1">
+              <p>Uses the best word-level checkpoint from <code>checkpoints/word_level_grid/</code> automatically.</p>
+              <p>Predicts 6 slots: <span className="text-foreground">command · color · preposition · letter · digit · adverb</span></p>
+            </div>
+          )}
         </div>
 
         {/* Upload */}
@@ -221,14 +204,8 @@ export default function DemoInferencePage() {
         {/* Server example */}
         {examples.length > 0 && (
           <div className="flex items-center gap-3">
-            <select
-              value={selectedExample}
-              onChange={(e) => setSelectedExample(e.target.value)}
-              className={`${inputClass} flex-1`}
-            >
-              {examples.map((name) => (
-                <option key={name} value={name}>{name}</option>
-              ))}
+            <select value={selectedExample} onChange={(e) => setSelectedExample(e.target.value)} className={`${inputClass} flex-1`}>
+              {examples.map((name) => <option key={name} value={name}>{name}</option>)}
             </select>
             <button
               type="button"
@@ -260,13 +237,11 @@ export default function DemoInferencePage() {
           </button>
         </div>
 
-        <DemoResultPanel
-          health={health}
-          result={result}
-          isLoading={isLoading}
-          error={error}
-          file={file}
-        />
+        {mode === "character" ? (
+          <DemoResultPanel health={health} result={ctcResult} isLoading={isLoading} error={error} />
+        ) : (
+          <WordResultPanel health={health} result={wordResult} isLoading={isLoading} error={error} />
+        )}
       </div>
     </div>
   );

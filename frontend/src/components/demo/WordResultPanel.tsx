@@ -1,12 +1,12 @@
 "use client";
 
-import type { AnalyzeResponse, HealthStatus } from "@/utils/demoApi";
+import type { WordAnalyzeResponse, HealthStatus } from "@/utils/demoApi";
 
-interface DemoResultPanelProps {
+interface WordResultPanelProps {
   isLoading: boolean;
   error: string | null;
   health: HealthStatus | null;
-  result: AnalyzeResponse | null;
+  result: WordAnalyzeResponse | null;
 }
 
 function fmt(value: number | null, digits = 2) {
@@ -17,11 +17,6 @@ function fmt(value: number | null, digits = 2) {
 function fmtPct(value: number | null) {
   if (value === null || Number.isNaN(value)) return "N/A";
   return `${(value * 100).toFixed(2)}%`;
-}
-
-function fmtScore(value: number | null) {
-  if (value === null || Number.isNaN(value)) return "N/A";
-  return value.toFixed(4);
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -36,19 +31,22 @@ function Card({ children, className = "" }: { children: React.ReactNode; classNa
   );
 }
 
-export default function DemoResultPanel({
-  isLoading,
-  error,
-  health,
-  result,
-}: DemoResultPanelProps) {
+function ConfidenceBar({ value }: { value: number }) {
+  const pct = Math.round(value * 100);
+  const color = pct >= 80 ? "bg-green-500" : pct >= 50 ? "bg-yellow-500" : "bg-red-400";
+  return (
+    <div className="mt-1.5 flex items-center gap-2">
+      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-border">
+        <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="w-9 text-right text-xs text-muted">{pct}%</span>
+    </div>
+  );
+}
 
+export default function WordResultPanel({ isLoading, error, health, result }: WordResultPanelProps) {
   if (isLoading) {
-    return (
-      <Card>
-        <p className="text-sm text-muted">Running inference…</p>
-      </Card>
-    );
+    return <Card><p className="text-sm text-muted">Running word-level inference…</p></Card>;
   }
 
   if (error) {
@@ -64,7 +62,7 @@ export default function DemoResultPanel({
     return (
       <Card>
         <p className="text-xs text-muted">
-          API: {health?.status ?? "unknown"} &middot; model loaded: {String(health?.model_loaded ?? false)} &middot; device: {health?.device_used ?? "N/A"}
+          API: {health?.status ?? "unknown"} · model loaded: {String(health?.model_loaded ?? false)} · device: {health?.device_used ?? "N/A"}
         </p>
       </Card>
     );
@@ -85,10 +83,10 @@ export default function DemoResultPanel({
         </section>
       )}
 
-      {/* Lip crop samples */}
+      {/* Lip crops */}
       {result.crop_samples?.length > 0 && (
         <section>
-          <SectionLabel>Cropped Lip Frames (MediaPipe · 6 samples)</SectionLabel>
+          <SectionLabel>Cropped Lip Frames (6 samples)</SectionLabel>
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
             {result.crop_samples.map((src, i) => (
               <div key={i} className="space-y-1">
@@ -100,30 +98,27 @@ export default function DemoResultPanel({
         </section>
       )}
 
-      {/* Prediction */}
+      {/* Predicted sentence */}
       <section>
-        <SectionLabel>Predicted Text</SectionLabel>
+        <SectionLabel>Predicted Sentence</SectionLabel>
         <p className="rounded-lg border border-border bg-card px-4 py-3 font-mono text-lg text-foreground">
-          {result.predicted_text || "(empty prediction)"}
+          {result.predicted_sentence || "(empty prediction)"}
         </p>
       </section>
 
-      {/* LLM correction */}
-      {result.llm?.corrected_text != null && (
-        <section className="rounded-lg border border-green-200 bg-green-50 p-4">
-          <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-green-700">
-            LLM Corrected
-            {result.llm.model && <span className="ml-1.5 normal-case text-green-500">({result.llm.model})</span>}
-          </p>
-          <p className="font-mono text-lg text-green-800">{result.llm.corrected_text || "(empty)"}</p>
-          {(result.llm.wer != null || result.llm.cer != null) && (
-            <div className="mt-2 flex gap-4 text-xs text-green-600">
-              {result.llm.wer != null && <span>WER: {fmtPct(result.llm.wer)}</span>}
-              {result.llm.cer != null && <span>CER: {fmtPct(result.llm.cer)}</span>}
-            </div>
-          )}
-        </section>
-      )}
+      {/* Slot breakdown */}
+      <section>
+        <SectionLabel>Slot Predictions</SectionLabel>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {result.slot_predictions.map((slot) => (
+            <Card key={slot.slot}>
+              <p className="text-xs text-muted capitalize">{slot.slot}</p>
+              <p className="mt-0.5 font-mono text-sm font-medium text-foreground">{slot.word}</p>
+              <ConfidenceBar value={slot.confidence} />
+            </Card>
+          ))}
+        </div>
+      </section>
 
       {/* Metrics */}
       <section className="grid gap-3 sm:grid-cols-3">
@@ -141,7 +136,6 @@ export default function DemoResultPanel({
         </Card>
       </section>
 
-      {/* Reference text */}
       <Card>
         <p className="text-xs text-muted">Reference text</p>
         <p className="mt-1 text-sm text-foreground">{result.reference_text || "N/A"}</p>
@@ -163,61 +157,24 @@ export default function DemoResultPanel({
         </Card>
       </section>
 
-      {/* Decoder */}
-      <Card>
-        <SectionLabel>Decoder</SectionLabel>
-        <div className="space-y-0.5 text-sm text-foreground">
-          <p>{result.decoder.label} &middot; beam width: {result.decoder.beam_width}</p>
-          <p className="text-muted">Collapsed: {result.debug.collapsed_text || "N/A"}</p>
-          {result.decoder.metadata.lm_type && (
-            <p className="text-muted">LM: {result.decoder.metadata.lm_type} &middot; α={fmtScore(result.decoder.metadata.ngram_alpha ?? null)}</p>
-          )}
-        </div>
-      </Card>
-
-      {/* Decoder hypotheses */}
-      <section>
-        <SectionLabel>Top Hypotheses</SectionLabel>
-        <div className="space-y-2">
-          {result.decoder.hypotheses.slice(0, result.debug.decoder_top_k).map((h) => (
-            <div key={`${h.rank}-${h.text}`} className="rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
-              <p className="text-xs text-muted">#{h.rank}</p>
-              <p className="mt-0.5 font-mono text-sm text-foreground">{h.text || "(empty)"}</p>
-              <p className="mt-1.5 text-xs text-muted">
-                acoustic {fmtScore(h.acoustic_score)} &middot; lm {fmtScore(h.lm_score)} &middot; combined {fmtScore(h.combined_score)}
-              </p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Raw CTC output */}
-      <section>
-        <SectionLabel>Raw CTC Output</SectionLabel>
-        <pre className="max-h-40 overflow-auto rounded-lg border border-border bg-card p-3 text-xs leading-relaxed text-foreground">
-          {result.debug.raw_timestep_text}
-        </pre>
-      </section>
-
       {/* Video stats */}
       <Card>
         <SectionLabel>Video Stats</SectionLabel>
         <div className="space-y-0.5 text-sm text-foreground">
           <p>{result.video_stats.filename}</p>
           <p className="text-muted">
-            {result.video_stats.width ?? "N/A"}×{result.video_stats.height ?? "N/A"} &middot; {fmt(result.video_stats.fps)} fps &middot; {result.video_stats.frame_count ?? "N/A"} frames &middot; {fmt(result.video_stats.duration_sec)}s
+            {result.video_stats.width ?? "N/A"}×{result.video_stats.height ?? "N/A"} · {fmt(result.video_stats.fps)} fps · {result.video_stats.frame_count ?? "N/A"} frames · {fmt(result.video_stats.duration_sec)}s
           </p>
-          <p className="text-muted">Shape: {result.video_stats.processed_shape.join(" × ")}</p>
         </div>
       </Card>
 
-      {/* Device specs */}
+      {/* Device */}
       <Card>
         <SectionLabel>Device</SectionLabel>
         <div className="space-y-0.5 text-sm text-foreground">
-          <p>{result.device_specs.device_used} &middot; TF {result.device_specs.tf_version}</p>
-          <p className="text-muted">{result.device_specs.cpu_model ?? "N/A"} &middot; {result.device_specs.cpu_physical_cores ?? "N/A"}c/{result.device_specs.cpu_logical_cores ?? "N/A"}t</p>
-          <p className="text-muted">RAM {fmt(result.device_specs.ram_total_gb)} GB &middot; GPU: {result.device_specs.gpu_names.length ? result.device_specs.gpu_names.join(", ") : "none"}</p>
+          <p>{result.device_specs.device_used} · TF {result.device_specs.tf_version}</p>
+          <p className="text-muted">{result.device_specs.cpu_model ?? "N/A"}</p>
+          <p className="text-muted">RAM {fmt(result.device_specs.ram_total_gb)} GB · GPU: {result.device_specs.gpu_names.length ? result.device_specs.gpu_names.join(", ") : "none"}</p>
         </div>
       </Card>
 

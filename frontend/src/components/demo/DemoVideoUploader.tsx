@@ -14,6 +14,7 @@ interface DemoVideoUploaderProps {
 
 export default function DemoVideoUploader({ file, onChange }: DemoVideoUploaderProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const previewUrl = useMemo(() => {
     if (!file) return null;
     return URL.createObjectURL(file);
@@ -21,6 +22,10 @@ export default function DemoVideoUploader({ file, onChange }: DemoVideoUploaderP
 
   useEffect(() => {
     return () => { if (previewUrl) URL.revokeObjectURL(previewUrl); };
+  }, [previewUrl]);
+
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.muted = false;
   }, [previewUrl]);
 
   const canPreview = !!file && file.type.startsWith("video/");
@@ -60,7 +65,9 @@ export default function DemoVideoUploader({ file, onChange }: DemoVideoUploaderP
           </div>
           {canPreview && previewUrl ? (
             <video
+              ref={videoRef}
               controls
+              onLoadedMetadata={(e) => { e.currentTarget.muted = false; }}
               className="aspect-video w-full rounded-lg bg-black object-contain"
               src={previewUrl}
             />
