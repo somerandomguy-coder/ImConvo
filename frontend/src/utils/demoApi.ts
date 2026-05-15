@@ -223,4 +223,68 @@ export async function analyzeDemoExample(
   return data;
 }
 
+export interface SlotPrediction {
+  slot: string;
+  word: string;
+  confidence: number;
+}
+
+export interface WordAnalyzeResponse {
+  predicted_sentence: string;
+  slot_predictions: SlotPrediction[];
+  reference_text: string | null;
+  reference_source: "manual" | "align_auto" | "none";
+  wer: number | null;
+  cer: number | null;
+  model_path_used: string;
+  latency_ms: {
+    preprocess: number;
+    inference: number;
+    total: number;
+  };
+  video_stats: {
+    filename: string;
+    size_bytes: number;
+    width: number | null;
+    height: number | null;
+    fps: number | null;
+    frame_count: number | null;
+    duration_sec: number | null;
+    processed_shape: number[];
+  };
+  preview_url: string | null;
+  crop_samples: string[];
+  device_specs: {
+    cpu_model: string | null;
+    cpu_physical_cores: number | null;
+    cpu_logical_cores: number | null;
+    ram_total_gb: number;
+    ram_available_gb: number;
+    gpu_names: string[];
+    gpu_memory_total_mb: number | null;
+    tf_version: string;
+    device_used: "CPU" | "GPU";
+  };
+}
+
+export async function analyzeWordVideo(file: File, modelPath?: string): Promise<WordAnalyzeResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (modelPath?.trim()) formData.append("model_path", modelPath.trim());
+  const { data } = await demoApi.post<WordAnalyzeResponse>("/analyze-word", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+export async function analyzeWordExample(exampleName: string, modelPath?: string): Promise<WordAnalyzeResponse> {
+  const formData = new FormData();
+  formData.append("example_name", exampleName);
+  if (modelPath?.trim()) formData.append("model_path", modelPath.trim());
+  const { data } = await demoApi.post<WordAnalyzeResponse>("/analyze-word-example", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
 export default demoApi;
