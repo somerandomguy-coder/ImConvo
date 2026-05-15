@@ -37,14 +37,10 @@ export default function DemoInferencePage() {
   useEffect(() => {
     let mounted = true;
     checkDemoHealth()
-      .then((data) => {
-        if (!mounted) return;
-        setHealth(data);
-      })
+      .then((data) => { if (mounted) setHealth(data); })
       .catch((err: unknown) => {
         if (!mounted) return;
-        const message =
-          err instanceof Error ? err.message : "Failed to connect to inference API.";
+        const message = err instanceof Error ? err.message : "Failed to connect to inference API.";
         setError(message);
       });
     listDecoders()
@@ -53,23 +49,15 @@ export default function DemoInferencePage() {
         setDecoders(data.decoders);
         setDecoderMode(data.default_mode || DEFAULT_DECODER_MODE);
       })
-      .catch(() => {
-        // Keep the page usable even if decoder discovery fails.
-      });
+      .catch(() => {});
     listDemoExamples(120)
       .then((data) => {
         if (!mounted) return;
         setExamples(data.examples);
-        if (data.examples.length > 0) {
-          setSelectedExample(data.examples[0]);
-        }
+        if (data.examples.length > 0) setSelectedExample(data.examples[0]);
       })
-      .catch(() => {
-        // Keep upload flow usable even if examples endpoint fails.
-      });
-    return () => {
-      mounted = false;
-    };
+      .catch(() => {});
+    return () => { mounted = false; };
   }, []);
 
   const runInference = async () => {
@@ -77,7 +65,6 @@ export default function DemoInferencePage() {
     setError(null);
     setResult(null);
     setIsLoading(true);
-
     try {
       const analyzed = await analyzeDemoVideo({
         file,
@@ -94,10 +81,8 @@ export default function DemoInferencePage() {
         (typeof err === "object" &&
           err &&
           "response" in err &&
-          typeof (err as { response?: { data?: { detail?: string } } }).response
-            ?.data?.detail === "string" &&
-          (err as { response?: { data?: { detail?: string } } }).response?.data
-            ?.detail) ||
+          typeof (err as { response?: { data?: { detail?: string } } }).response?.data?.detail === "string" &&
+          (err as { response?: { data?: { detail?: string } } }).response?.data?.detail) ||
         (err instanceof Error ? err.message : "Inference request failed.");
       setError(message);
     } finally {
@@ -111,7 +96,6 @@ export default function DemoInferencePage() {
     setResult(null);
     setIsLoading(true);
     setFile(null);
-
     try {
       const analyzed = await analyzeDemoExample({
         exampleName: selectedExample,
@@ -128,10 +112,8 @@ export default function DemoInferencePage() {
         (typeof err === "object" &&
           err &&
           "response" in err &&
-          typeof (err as { response?: { data?: { detail?: string } } }).response
-            ?.data?.detail === "string" &&
-          (err as { response?: { data?: { detail?: string } } }).response?.data
-            ?.detail) ||
+          typeof (err as { response?: { data?: { detail?: string } } }).response?.data?.detail === "string" &&
+          (err as { response?: { data?: { detail?: string } } }).response?.data?.detail) ||
         (err instanceof Error ? err.message : "Example inference request failed.");
       setError(message);
     } finally {
@@ -146,148 +128,133 @@ export default function DemoInferencePage() {
     setError(null);
   };
 
+  const inputClass =
+    "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-accent/60 focus:ring-1 focus:ring-accent/30 disabled:opacity-40";
+
   return (
-    <div className="flex flex-1 flex-col items-center px-6 py-10">
-      <div className="w-full max-w-4xl space-y-6">
-        <section className="space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">
-            Demo Inference (Isolated PoC)
+    <div className="flex flex-1 flex-col items-center px-6 py-12">
+      <div className="w-full max-w-3xl space-y-6">
+        {/* Page header */}
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            Demo Inference
           </h1>
           <p className="text-sm text-muted">
-            Upload one video and run offline lip-reading inference with metrics,
-            latency, and device specs.
+            Run offline lip-reading with metrics, latency, and device info.
           </p>
-          <p className="text-xs text-muted">
-            Tip: if your source is MPG, convert it to MP4 for browser preview.
-            Example: <code>npm run demo:convert:s1</code>
-          </p>
-        </section>
+        </div>
 
-        <section className="rounded-xl border border-border bg-card p-5">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <label className="space-y-1">
-              <span className="text-sm font-medium text-foreground">
-                Model path
-              </span>
+        {/* Settings panel */}
+        <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-5">
+          <p className="text-xs font-medium uppercase tracking-wider text-muted">Settings</p>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="space-y-1.5">
+              <span className="text-xs text-muted">Model path</span>
               <input
                 value={modelPath}
                 onChange={(e) => setModelPath(e.target.value)}
-                className="w-full rounded-md border border-border bg-black/20 px-3 py-2 text-sm text-foreground outline-none ring-accent/40 focus:ring-2"
+                className={inputClass}
                 placeholder={DEFAULT_MODEL_PATH}
               />
             </label>
 
-            <label className="space-y-1">
-              <span className="text-sm font-medium text-foreground">
-                Expected text (optional)
-              </span>
+            <label className="space-y-1.5">
+              <span className="text-xs text-muted">Expected text (optional)</span>
               <input
                 value={expectedText}
                 onChange={(e) => setExpectedText(e.target.value)}
-                className="w-full rounded-md border border-border bg-black/20 px-3 py-2 text-sm text-foreground outline-none ring-accent/40 focus:ring-2"
-                placeholder="Type expected sentence for WER/CER"
+                className={inputClass}
+                placeholder="For WER/CER scoring"
               />
             </label>
 
-            <label className="space-y-1">
-              <span className="text-sm font-medium text-foreground">
-                Decoder mode
-              </span>
+            <label className="space-y-1.5">
+              <span className="text-xs text-muted">Decoder</span>
               <select
                 value={decoderMode}
                 onChange={(e) => setDecoderMode(e.target.value)}
-                className="w-full rounded-md border border-border bg-black/20 px-3 py-2 text-sm text-foreground outline-none ring-accent/40 focus:ring-2"
+                className={inputClass}
               >
                 {decoders.length === 0 && (
                   <option value={DEFAULT_DECODER_MODE}>Greedy CTC</option>
                 )}
-                {decoders.map((decoder) => (
-                  <option key={decoder.mode} value={decoder.mode}>
-                    {decoder.label}
-                  </option>
+                {decoders.map((d) => (
+                  <option key={d.mode} value={d.mode}>{d.label}</option>
                 ))}
               </select>
             </label>
 
-            <label className="space-y-1">
-              <span className="text-sm font-medium text-foreground">
-                Server example (s3_processed)
-              </span>
-              <select
-                value={selectedExample}
-                onChange={(e) => setSelectedExample(e.target.value)}
-                className="w-full rounded-md border border-border bg-black/20 px-3 py-2 text-sm text-foreground outline-none ring-accent/40 focus:ring-2"
-              >
-                {examples.length === 0 && (
-                  <option value="">No examples available</option>
-                )}
-                {examples.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-1">
-              <span className="text-sm font-medium text-foreground">
-                Beam width
-              </span>
+            <label className="space-y-1.5">
+              <span className="text-xs text-muted">Beam width</span>
               <input
                 type="number"
                 min={2}
                 step={1}
                 value={beamWidth}
                 onChange={(e) => setBeamWidth(Number(e.target.value) || DEFAULT_BEAM_WIDTH)}
-                className="w-full rounded-md border border-border bg-black/20 px-3 py-2 text-sm text-foreground outline-none ring-accent/40 focus:ring-2"
+                className={inputClass}
                 disabled={decoderMode !== "beam_ctc"}
               />
             </label>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-end gap-4 border-t border-border pt-4">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
+          <div className="flex flex-wrap items-center gap-6 border-t border-border pt-4">
+            <label className="flex cursor-pointer items-center gap-2.5 select-none">
               <input
                 type="checkbox"
                 checked={llmPostprocess}
                 onChange={(e) => setLlmPostprocess(e.target.checked)}
                 className="h-4 w-4 rounded border-border accent-accent"
               />
-              <span className="text-sm font-medium text-foreground">
-                LLM Post-processing (Gemini)
-              </span>
+              <span className="text-sm text-foreground">LLM post-processing (Gemini)</span>
             </label>
             {llmPostprocess && (
-              <p className="text-xs text-muted">
-                API key loaded from server <code>.env</code>
-              </p>
+              <p className="text-xs text-muted">API key from server <code>.env</code></p>
             )}
           </div>
-        </section>
+        </div>
 
+        {/* Upload */}
         <DemoVideoUploader file={file} onChange={setFile} />
 
+        {/* Server example */}
+        {examples.length > 0 && (
+          <div className="flex items-center gap-3">
+            <select
+              value={selectedExample}
+              onChange={(e) => setSelectedExample(e.target.value)}
+              className={`${inputClass} flex-1`}
+            >
+              {examples.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={!selectedExample || isLoading}
+              onClick={runExampleInference}
+              className="rounded-lg border border-border px-4 py-2 text-sm text-muted transition-colors hover:border-foreground/30 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {isLoading ? "Running…" : "Run server example"}
+            </button>
+          </div>
+        )}
+
+        {/* Actions */}
         <div className="flex flex-wrap gap-3">
           <button
             type="button"
             disabled={!file || isLoading}
             onClick={runInference}
-            className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {isLoading ? "Analyzing..." : "Analyze Video"}
-          </button>
-          <button
-            type="button"
-            disabled={!selectedExample || isLoading}
-            onClick={runExampleInference}
-            className="rounded-lg bg-card px-5 py-2.5 text-sm font-medium text-foreground ring-1 ring-border transition-colors hover:bg-card-hover disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isLoading ? "Analyzing..." : "Run Server Example"}
+            {isLoading ? "Analyzing…" : "Analyze Video"}
           </button>
           <button
             type="button"
             onClick={reset}
-            className="rounded-lg border border-border px-5 py-2.5 text-sm font-medium text-muted transition-colors hover:border-foreground hover:text-foreground"
+            className="rounded-lg border border-border px-5 py-2.5 text-sm text-muted transition-colors hover:border-foreground/20 hover:text-foreground"
           >
             Reset
           </button>

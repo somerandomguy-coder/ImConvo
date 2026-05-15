@@ -1,8 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
-import Link from "next/link";
 import VideoUploader from "@/components/VideoUploader";
 import ResultDisplay from "@/components/ResultDisplay";
 
@@ -22,8 +20,6 @@ export default function Home() {
     if (!file) return;
     setIsLoading(true);
     setResultText("");
-
-    // Mock: simulate 3s inference delay
     setTimeout(() => {
       const mock = MOCK_RESULTS[Math.floor(Math.random() * MOCK_RESULTS.length)];
       setResultText(mock);
@@ -39,32 +35,15 @@ export default function Home() {
   };
 
   return (
-    <div className="flex flex-1 flex-col items-center px-6 py-16">
-      <div className="w-full max-w-2xl space-y-8">
-        {/* Header */}
-        <div>
-          <h1 className="flex items-center gap-4 text-3xl font-bold tracking-tight">
-            <Image src="/logo.png" alt="ImConvo" width={56} height={56} />
-            ImConvo{" "}
-            <span className="text-lg font-normal text-muted">
-              Lip Reading AI
-            </span>
+    <div className="flex flex-1 flex-col items-center px-6 py-20">
+      <div className="w-full max-w-lg space-y-5">
+        <div className="space-y-1.5">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            Lip Reading
           </h1>
-          <p className="mt-2 text-sm text-muted">
-            Upload a video — we would predict what&apos;s being said, no
-            audio needed.
+          <p className="text-sm leading-relaxed text-muted">
+            Drop a video clip — we&apos;ll read the lips and return the spoken text.
           </p>
-          <div className="mt-4 rounded-lg border border-accent/40 bg-accent/10 p-3">
-            <p className="text-sm text-foreground">
-              Looking for model selection, WER/CER, latency, and device specs?
-            </p>
-            <Link
-              href="/demo/inference"
-              className="mt-2 inline-block rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-hover"
-            >
-              Open Demo Inference
-            </Link>
-          </div>
         </div>
 
         <VideoUploader
@@ -76,9 +55,9 @@ export default function Home() {
         {file && !isLoading && !resultText && (
           <button
             onClick={handleAnalyze}
-            className="w-full rounded-lg bg-accent py-3 text-sm font-medium text-white transition-colors hover:bg-accent-hover"
+            className="w-full rounded-lg bg-accent py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-hover"
           >
-            Analyze Video
+            Analyze
           </button>
         )}
 
@@ -87,9 +66,9 @@ export default function Home() {
         {resultText && (
           <button
             onClick={reset}
-            className="w-full rounded-lg border border-border py-3 text-sm font-medium text-muted transition-colors hover:border-foreground hover:text-foreground"
+            className="w-full rounded-lg border border-border py-2.5 text-sm text-muted transition-colors hover:border-foreground/20 hover:text-foreground"
           >
-            Analyze Another Video
+            Try another video
           </button>
         )}
       </div>

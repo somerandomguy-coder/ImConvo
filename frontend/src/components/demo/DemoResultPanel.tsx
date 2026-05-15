@@ -11,19 +11,31 @@ interface DemoResultPanelProps {
   file: File | null;
 }
 
-function displayNumber(value: number | null, digits: number = 2) {
+function fmt(value: number | null, digits = 2) {
   if (value === null || Number.isNaN(value)) return "N/A";
   return value.toFixed(digits);
 }
 
-function displayPercent(value: number | null) {
+function fmtPct(value: number | null) {
   if (value === null || Number.isNaN(value)) return "N/A";
   return `${(value * 100).toFixed(2)}%`;
 }
 
-function displayScore(value: number | null) {
+function fmtScore(value: number | null) {
   if (value === null || Number.isNaN(value)) return "N/A";
   return value.toFixed(4);
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted">{children}</p>
+  );
+}
+
+function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`rounded-lg border border-border bg-card p-3 shadow-sm ${className}`}>{children}</div>
+  );
 }
 
 export default function DemoResultPanel({
@@ -39,281 +51,195 @@ export default function DemoResultPanel({
   }, [file]);
 
   useEffect(() => {
-    return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-    };
+    return () => { if (previewUrl) URL.revokeObjectURL(previewUrl); };
   }, [previewUrl]);
 
   const canPreview = !!file && file.type.startsWith("video/");
 
   if (isLoading) {
     return (
-      <div className="w-full rounded-xl border border-border bg-card p-6">
-        <p className="text-sm text-muted">Running offline inference...</p>
-      </div>
+      <Card>
+        <p className="text-sm text-muted">Running inference…</p>
+      </Card>
     );
   }
 
   if (error) {
     return (
-      <div className="w-full rounded-xl border border-red-600/60 bg-red-950/20 p-6">
-        <p className="text-sm font-semibold text-red-300">Inference failed</p>
-        <p className="mt-1 text-sm text-red-200">{error}</p>
+      <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+        <p className="text-sm font-medium text-red-600">Inference failed</p>
+        <p className="mt-1 text-sm text-red-500">{error}</p>
       </div>
     );
   }
 
   if (!result) {
     return (
-      <div className="w-full rounded-xl border border-border bg-card p-6">
-        <p className="text-sm text-muted">
-          API status: {health?.status ?? "unknown"} | model loaded:{" "}
-          {String(health?.model_loaded ?? false)} | device:{" "}
-          {health?.device_used ?? "N/A"}
+      <Card>
+        <p className="text-xs text-muted">
+          API: {health?.status ?? "unknown"} &middot; model loaded: {String(health?.model_loaded ?? false)} &middot; device: {health?.device_used ?? "N/A"}
         </p>
-      </div>
+      </Card>
     );
   }
 
   return (
-    <div className="w-full space-y-4 rounded-xl border border-border bg-card p-6">
+    <div className="w-full space-y-4">
+      {/* Video preview */}
       <section>
-        <p className="mb-2 text-xs uppercase tracking-widest text-muted">
-          Uploaded Video
-        </p>
+        <SectionLabel>Uploaded Video</SectionLabel>
         {result.preview_url ? (
           <video
             controls
-            className="aspect-video w-full rounded-md bg-black object-contain"
+            className="aspect-video w-full rounded-lg bg-black object-contain"
             src={`${process.env.NEXT_PUBLIC_DEMO_API_URL || "http://localhost:8001"}${result.preview_url}`}
           />
         ) : !file ? (
-          <div className="rounded-md border border-border px-3 py-6 text-sm text-muted">
-            No file selected.
-          </div>
+          <Card><p className="text-sm text-muted">No file selected.</p></Card>
         ) : canPreview && previewUrl ? (
-          <video
-            controls
-            className="aspect-video w-full rounded-md bg-black object-contain"
-            src={previewUrl}
-          />
+          <video controls className="aspect-video w-full rounded-lg bg-black object-contain" src={previewUrl} />
         ) : (
-          <div className="rounded-md border border-border px-3 py-6 text-sm text-muted">
-            Preview not available for this format ({file.name}).
-          </div>
+          <Card><p className="text-sm text-muted">Preview not available ({file.name}).</p></Card>
         )}
       </section>
 
+      {/* Lip crop samples */}
       {result.crop_samples?.length > 0 && (
         <section>
-          <p className="mb-2 text-xs uppercase tracking-widest text-muted">
-            Cropped Lip Frames (MediaPipe · 6 samples)
-          </p>
+          <SectionLabel>Cropped Lip Frames (MediaPipe · 6 samples)</SectionLabel>
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
             {result.crop_samples.map((src, i) => (
               <div key={i} className="space-y-1">
-                <img
-                  src={src}
-                  alt={`lip frame ${i}`}
-                  className="w-full rounded border border-border bg-black"
-                />
-                <p className="text-center text-xs text-muted">
-                  f{Math.round((i / 5) * 74)}
-                </p>
+                <img src={src} alt={`lip frame ${i}`} className="w-full rounded border border-border bg-black" />
+                <p className="text-center text-xs text-muted">f{Math.round((i / 5) * 74)}</p>
               </div>
             ))}
           </div>
         </section>
       )}
 
+      {/* Prediction */}
       <section>
-        <p className="mb-2 text-xs uppercase tracking-widest text-muted">
-          Predicted Text
-        </p>
-        <p className="rounded-md bg-black/30 px-3 py-2 font-mono text-lg text-foreground">
+        <SectionLabel>Predicted Text</SectionLabel>
+        <p className="rounded-lg border border-border bg-card px-4 py-3 font-mono text-lg text-foreground">
           {result.predicted_text || "(empty prediction)"}
         </p>
       </section>
 
+      {/* LLM correction */}
       {result.llm?.corrected_text != null && (
-        <section className="rounded-md border border-green-700/50 bg-green-950/20 p-3">
-          <p className="mb-2 text-xs uppercase tracking-wide text-green-400">
-            LLM Corrected Text
-            {result.llm.model && (
-              <span className="ml-2 normal-case text-green-600">({result.llm.model})</span>
-            )}
+        <section className="rounded-lg border border-green-200 bg-green-50 p-4">
+          <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-green-700">
+            LLM Corrected
+            {result.llm.model && <span className="ml-1.5 normal-case text-green-500">({result.llm.model})</span>}
           </p>
-          <p className="font-mono text-lg text-green-200">
-            {result.llm.corrected_text || "(empty)"}
-          </p>
+          <p className="font-mono text-lg text-green-800">{result.llm.corrected_text || "(empty)"}</p>
           {(result.llm.wer != null || result.llm.cer != null) && (
-            <div className="mt-2 flex gap-4 text-sm text-green-400">
-              {result.llm.wer != null && (
-                <span>WER: {displayPercent(result.llm.wer)}</span>
-              )}
-              {result.llm.cer != null && (
-                <span>CER: {displayPercent(result.llm.cer)}</span>
-              )}
+            <div className="mt-2 flex gap-4 text-xs text-green-600">
+              {result.llm.wer != null && <span>WER: {fmtPct(result.llm.wer)}</span>}
+              {result.llm.cer != null && <span>CER: {fmtPct(result.llm.cer)}</span>}
             </div>
           )}
         </section>
       )}
 
-      <section className="rounded-md border border-border p-3">
-        <p className="mb-2 text-xs uppercase tracking-wide text-muted">
-          Decoder Summary
-        </p>
-        <div className="grid gap-1 text-sm text-foreground">
-          <p>Mode: {result.decoder.label}</p>
-          <p>Code: {result.decoder.mode}</p>
-          <p>Beam width: {result.decoder.beam_width}</p>
-          <p>Collapsed text: {result.debug.collapsed_text || "N/A"}</p>
+      {/* Metrics */}
+      <section className="grid gap-3 sm:grid-cols-3">
+        <Card>
+          <p className="text-xs text-muted">WER</p>
+          <p className="mt-1 text-lg font-semibold text-foreground">{fmtPct(result.wer)}</p>
+        </Card>
+        <Card>
+          <p className="text-xs text-muted">CER</p>
+          <p className="mt-1 text-lg font-semibold text-foreground">{fmtPct(result.cer)}</p>
+        </Card>
+        <Card>
+          <p className="text-xs text-muted">Reference source</p>
+          <p className="mt-1 text-sm text-foreground">{result.reference_source}</p>
+        </Card>
+      </section>
+
+      {/* Reference text */}
+      <Card>
+        <p className="text-xs text-muted">Reference text</p>
+        <p className="mt-1 text-sm text-foreground">{result.reference_text || "N/A"}</p>
+      </Card>
+
+      {/* Latency */}
+      <section className="grid gap-3 sm:grid-cols-3">
+        <Card>
+          <p className="text-xs text-muted">Preprocess (ms)</p>
+          <p className="mt-1 text-sm text-foreground">{fmt(result.latency_ms.preprocess)}</p>
+        </Card>
+        <Card>
+          <p className="text-xs text-muted">Inference (ms)</p>
+          <p className="mt-1 text-sm text-foreground">{fmt(result.latency_ms.inference)}</p>
+        </Card>
+        <Card>
+          <p className="text-xs text-muted">Total (ms)</p>
+          <p className="mt-1 text-sm text-foreground">{fmt(result.latency_ms.total)}</p>
+        </Card>
+      </section>
+
+      {/* Decoder */}
+      <Card>
+        <SectionLabel>Decoder</SectionLabel>
+        <div className="space-y-0.5 text-sm text-foreground">
+          <p>{result.decoder.label} &middot; beam width: {result.decoder.beam_width}</p>
+          <p className="text-muted">Collapsed: {result.debug.collapsed_text || "N/A"}</p>
           {result.decoder.metadata.lm_type && (
-            <p>LM type: {result.decoder.metadata.lm_type}</p>
+            <p className="text-muted">LM: {result.decoder.metadata.lm_type} &middot; α={fmtScore(result.decoder.metadata.ngram_alpha ?? null)}</p>
           )}
-          {result.decoder.metadata.ngram_alpha !== undefined && (
-            <p>LM weight: {displayScore(result.decoder.metadata.ngram_alpha)}</p>
-          )}
+        </div>
+      </Card>
+
+      {/* Decoder hypotheses */}
+      <section>
+        <SectionLabel>Top Hypotheses</SectionLabel>
+        <div className="space-y-2">
+          {result.decoder.hypotheses.slice(0, result.debug.decoder_top_k).map((h) => (
+            <div key={`${h.rank}-${h.text}`} className="rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
+              <p className="text-xs text-muted">#{h.rank}</p>
+              <p className="mt-0.5 font-mono text-sm text-foreground">{h.text || "(empty)"}</p>
+              <p className="mt-1.5 text-xs text-muted">
+                acoustic {fmtScore(h.acoustic_score)} &middot; lm {fmtScore(h.lm_score)} &middot; combined {fmtScore(h.combined_score)}
+              </p>
+            </div>
+          ))}
         </div>
       </section>
 
-      <section className="rounded-md border border-border p-3">
-        <p className="mb-2 text-xs uppercase tracking-wide text-muted">
-          Raw CTC Timestep Output (Debug)
-        </p>
-        <p className="text-xs text-muted">
-          Repeats and blanks are intentionally preserved.
-        </p>
-        <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-black/30 p-3 text-xs leading-relaxed text-foreground">
+      {/* Raw CTC output */}
+      <section>
+        <SectionLabel>Raw CTC Output</SectionLabel>
+        <pre className="max-h-40 overflow-auto rounded-lg border border-border bg-card p-3 text-xs leading-relaxed text-foreground">
           {result.debug.raw_timestep_text}
         </pre>
       </section>
 
-      <section className="rounded-md border border-border p-3">
-        <p className="mb-2 text-xs uppercase tracking-wide text-muted">
-          Decoder Hypotheses (Debug)
-        </p>
-        <div className="space-y-3">
-          {result.decoder.hypotheses
-            .slice(0, result.debug.decoder_top_k)
-            .map((hypothesis) => (
-              <div
-                key={`${hypothesis.rank}-${hypothesis.text}`}
-                className="rounded-md bg-black/30 p-3"
-              >
-                <p className="text-xs uppercase tracking-wide text-muted">
-                  Rank {hypothesis.rank}
-                </p>
-                <p className="mt-1 font-mono text-sm text-foreground">
-                  {hypothesis.text || "(empty prediction)"}
-                </p>
-                <p className="mt-2 text-xs text-muted">
-                  Acoustic score: {displayScore(hypothesis.acoustic_score)} |
-                  LM score: {displayScore(hypothesis.lm_score)} |
-                  Combined score: {displayScore(hypothesis.combined_score)}
-                </p>
-              </div>
-            ))}
+      {/* Video stats */}
+      <Card>
+        <SectionLabel>Video Stats</SectionLabel>
+        <div className="space-y-0.5 text-sm text-foreground">
+          <p>{result.video_stats.filename}</p>
+          <p className="text-muted">
+            {result.video_stats.width ?? "N/A"}×{result.video_stats.height ?? "N/A"} &middot; {fmt(result.video_stats.fps)} fps &middot; {result.video_stats.frame_count ?? "N/A"} frames &middot; {fmt(result.video_stats.duration_sec)}s
+          </p>
+          <p className="text-muted">Shape: {result.video_stats.processed_shape.join(" × ")}</p>
         </div>
-      </section>
+      </Card>
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <div className="rounded-md border border-border p-3">
-          <p className="text-xs uppercase tracking-wide text-muted">WER</p>
-          <p className="mt-1 text-lg font-semibold text-foreground">
-            {displayPercent(result.wer)}
-          </p>
+      {/* Device specs */}
+      <Card>
+        <SectionLabel>Device</SectionLabel>
+        <div className="space-y-0.5 text-sm text-foreground">
+          <p>{result.device_specs.device_used} &middot; TF {result.device_specs.tf_version}</p>
+          <p className="text-muted">{result.device_specs.cpu_model ?? "N/A"} &middot; {result.device_specs.cpu_physical_cores ?? "N/A"}c/{result.device_specs.cpu_logical_cores ?? "N/A"}t</p>
+          <p className="text-muted">RAM {fmt(result.device_specs.ram_total_gb)} GB &middot; GPU: {result.device_specs.gpu_names.length ? result.device_specs.gpu_names.join(", ") : "none"}</p>
         </div>
-        <div className="rounded-md border border-border p-3">
-          <p className="text-xs uppercase tracking-wide text-muted">CER</p>
-          <p className="mt-1 text-lg font-semibold text-foreground">
-            {displayPercent(result.cer)}
-          </p>
-        </div>
-        <div className="rounded-md border border-border p-3">
-          <p className="text-xs uppercase tracking-wide text-muted">
-            Reference Source
-          </p>
-          <p className="mt-1 text-sm text-foreground">{result.reference_source}</p>
-        </div>
-      </section>
+      </Card>
 
-      <section className="space-y-1 rounded-md border border-border p-3">
-        <p className="text-xs uppercase tracking-wide text-muted">Reference Text</p>
-        <p className="text-sm text-foreground">{result.reference_text || "N/A"}</p>
-      </section>
-
-      <section className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-md border border-border p-3">
-          <p className="text-xs uppercase tracking-wide text-muted">
-            Preprocess (ms)
-          </p>
-          <p className="mt-1 text-sm text-foreground">
-            {displayNumber(result.latency_ms.preprocess)}
-          </p>
-        </div>
-        <div className="rounded-md border border-border p-3">
-          <p className="text-xs uppercase tracking-wide text-muted">
-            Inference (ms)
-          </p>
-          <p className="mt-1 text-sm text-foreground">
-            {displayNumber(result.latency_ms.inference)}
-          </p>
-        </div>
-        <div className="rounded-md border border-border p-3">
-          <p className="text-xs uppercase tracking-wide text-muted">Total (ms)</p>
-          <p className="mt-1 text-sm text-foreground">
-            {displayNumber(result.latency_ms.total)}
-          </p>
-        </div>
-      </section>
-
-      <section className="rounded-md border border-border p-3">
-        <p className="mb-2 text-xs uppercase tracking-wide text-muted">Video Stats</p>
-        <div className="grid gap-1 text-sm text-foreground">
-          <p>Filename: {result.video_stats.filename}</p>
-          <p>Size: {result.video_stats.size_bytes} bytes</p>
-          <p>
-            Resolution: {result.video_stats.width ?? "N/A"} x{" "}
-            {result.video_stats.height ?? "N/A"}
-          </p>
-          <p>FPS: {displayNumber(result.video_stats.fps)}</p>
-          <p>Frame Count: {result.video_stats.frame_count ?? "N/A"}</p>
-          <p>Duration (s): {displayNumber(result.video_stats.duration_sec)}</p>
-          <p>Processed Shape: {result.video_stats.processed_shape.join(" x ")}</p>
-        </div>
-      </section>
-
-      <section className="rounded-md border border-border p-3">
-        <p className="mb-2 text-xs uppercase tracking-wide text-muted">Device Specs</p>
-        <div className="grid gap-1 text-sm text-foreground">
-          <p>Runtime Device: {result.device_specs.device_used}</p>
-          <p>TensorFlow: {result.device_specs.tf_version}</p>
-          <p>CPU: {result.device_specs.cpu_model ?? "N/A"}</p>
-          <p>
-            CPU Cores: {result.device_specs.cpu_physical_cores ?? "N/A"} physical /{" "}
-            {result.device_specs.cpu_logical_cores ?? "N/A"} logical
-          </p>
-          <p>
-            RAM: {displayNumber(result.device_specs.ram_total_gb)} GB total /{" "}
-            {displayNumber(result.device_specs.ram_available_gb)} GB available
-          </p>
-          <p>
-            GPU(s):{" "}
-            {result.device_specs.gpu_names.length
-              ? result.device_specs.gpu_names.join(", ")
-              : "None detected"}
-          </p>
-          <p>
-            GPU Total Memory (MB):{" "}
-            {result.device_specs.gpu_memory_total_mb ?? "N/A"}
-          </p>
-        </div>
-      </section>
-
-      <section className="rounded-md border border-border p-3 text-xs text-muted">
-        <p>Model used: {result.model_path_used}</p>
-      </section>
+      <p className="text-xs text-muted/50">{result.model_path_used}</p>
     </div>
   );
 }

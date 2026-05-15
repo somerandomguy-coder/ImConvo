@@ -13,37 +13,21 @@ export default function ResultDisplay({ text, isLoading }: ResultDisplayProps) {
   if (!isLoading && !text) return null;
 
   return (
-    <div className="w-full rounded-xl border border-border bg-card p-6">
-      <p className="mb-3 text-xs font-medium uppercase tracking-widest text-muted">
-        Predicted Text
-      </p>
+    <div className="animate-fade-in-up w-full rounded-xl border border-border bg-card px-5 py-4 shadow-sm">
+      <p className="mb-2.5 text-xs text-muted">Predicted text</p>
       {isLoading ? (
         <div className="flex items-center gap-3">
-          <svg
-            className="h-5 w-5 animate-spin text-accent"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-            />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-            />
-          </svg>
-          <span className="text-sm text-muted">Analyzing lip movements...</span>
+          <span className="flex gap-1">
+            <span className="animate-bounce-dot h-1.5 w-1.5 rounded-full bg-accent" style={{ animationDelay: "0ms" }} />
+            <span className="animate-bounce-dot h-1.5 w-1.5 rounded-full bg-accent" style={{ animationDelay: "160ms" }} />
+            <span className="animate-bounce-dot h-1.5 w-1.5 rounded-full bg-accent" style={{ animationDelay: "320ms" }} />
+          </span>
+          <span className="text-sm text-muted">Analyzing lip movements…</span>
         </div>
       ) : (
-        <p className="font-mono text-xl leading-relaxed text-foreground">
+        <p className="font-mono text-lg leading-relaxed text-foreground">
           {displayed}
-          {isTyping && <span className="animate-cursor">|</span>}
+          {isTyping && <span className="animate-cursor ml-0.5 text-accent">|</span>}
         </p>
       )}
     </div>

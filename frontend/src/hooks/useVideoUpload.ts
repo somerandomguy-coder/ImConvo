@@ -1,8 +1,6 @@
 import { useCallback, useState } from "react";
 import { useDropzone, type DropzoneOptions } from "react-dropzone";
 
-const BROWSER_PLAYABLE = new Set(["video/mp4", "video/webm", "video/ogg"]);
-
 const ACCEPT: DropzoneOptions["accept"] = {
   "video/*": [".mp4", ".mpg", ".mpeg", ".avi", ".mov", ".webm"],
 };
@@ -18,7 +16,7 @@ export function useVideoUpload(onFileSelected: (file: File) => void) {
       if (!f) return;
       setFile(f);
       setPreview(URL.createObjectURL(f));
-      setCanPlay(BROWSER_PLAYABLE.has(f.type));
+      setCanPlay(f.type.startsWith("video/"));
       onFileSelected(f);
     },
     [onFileSelected],

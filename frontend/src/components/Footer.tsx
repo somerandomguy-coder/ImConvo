@@ -1,10 +1,9 @@
 export default function Footer() {
   return (
-    <footer className="border-t border-border py-8">
-      <div className="mx-auto max-w-5xl px-6 text-center text-sm text-muted">
-        <p>ImConvo — Lip Reading AI</p>
-        <p>Convobeo Team</p>
-      </div>
+    <footer className="border-t border-border bg-card py-6">
+      <p className="text-center text-xs text-muted">
+        ImConvo &middot; Convobeo Team
+      </p>
     </footer>
   );
 }
