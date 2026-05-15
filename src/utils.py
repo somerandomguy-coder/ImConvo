@@ -35,6 +35,7 @@ LIP_X_END = FALLBACK_LIP_X_END
 FRAME_HEIGHT = 80
 FRAME_WIDTH = 120
 MAX_FRAMES = 75
+TARGET_FPS = 25.0  # GRID corpus native fps; all videos resampled to this
 
 # Padding around the MediaPipe lip bounding box (fraction of lip size)
 LIP_PAD_X = 0.25
@@ -207,7 +208,7 @@ def extract_lip_frames(video_path: str) -> "np.ndarray | None":
     """Load video, detect lip landmarks with MediaPipe, crop, resize, normalise.
 
     Strategy:
-        1. Read all frames.
+        1. Read all frames; resample to TARGET_FPS for temporal consistency.
         2. Run MediaPipe on a sparse sample (~10 frames) for speed.
         3. If detection rate < 50 %, retry on every frame.
         4. Take the median bounding box across detections for a stable crop.
@@ -220,6 +221,7 @@ def extract_lip_frames(video_path: str) -> "np.ndarray | None":
     raw_frames: list[np.ndarray] = []
 
     cap = cv2.VideoCapture(video_path)
+    source_fps = cap.get(cv2.CAP_PROP_FPS) or TARGET_FPS
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -229,6 +231,12 @@ def extract_lip_frames(video_path: str) -> "np.ndarray | None":
 
     if not raw_frames:
         return np.zeros((MAX_FRAMES, FRAME_HEIGHT, FRAME_WIDTH), dtype=np.float32)
+
+    # Resample to TARGET_FPS so inference matches training temporal rate
+    if abs(source_fps - TARGET_FPS) > 0.5:
+        target_count = max(1, int(round(len(raw_frames) * TARGET_FPS / source_fps)))
+        indices = np.linspace(0, len(raw_frames) - 1, target_count).round().astype(int)
+        raw_frames = [raw_frames[i] for i in indices]
 
     frame_h, frame_w = raw_frames[0].shape[:2]
 
@@ -290,7 +298,10 @@ def extract_lip_frames(video_path: str) -> "np.ndarray | None":
     if T < MAX_FRAMES:
         pad = np.zeros((MAX_FRAMES - T, FRAME_HEIGHT, FRAME_WIDTH), dtype=np.float32)
         out = np.concatenate([out, pad], axis=0)
-    else:
-        out = out[:MAX_FRAMES]
+    elif T > MAX_FRAMES:
+        # Uniform subsample: spread MAX_FRAMES indices across the full duration
+        # so no speech is cut — longer videos just have slightly lower temporal resolution
+        indices = np.linspace(0, T - 1, MAX_FRAMES).round().astype(int)
+        out = out[indices]
 
     return out

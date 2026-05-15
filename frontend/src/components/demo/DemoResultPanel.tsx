@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import type { AnalyzeResponse, HealthStatus } from "@/utils/demoApi";

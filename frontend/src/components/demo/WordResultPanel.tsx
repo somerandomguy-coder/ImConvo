@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import type { WordAnalyzeResponse, HealthStatus } from "@/utils/demoApi";
@@ -83,7 +84,7 @@ export default function WordResultPanel({ isLoading, error, health, result }: Wo
         </section>
       )}
 
-      {/* Lip crops */}
+      {/* Lip crop samples */}
       {result.crop_samples?.length > 0 && (
         <section>
           <SectionLabel>Cropped Lip Frames (6 samples)</SectionLabel>
