@@ -67,8 +67,19 @@ from src import (
 )
 from src.model import LegacyLipReadingCTC
 from src.llm_postprocessor import LLMPostprocessor
+from experiments.word_level_grid.model import (
+    LipReadingWordClassifier,
+    build_lipreading_word_classifier,
+)
+from experiments.word_level_grid.common import (
+    SLOT_NAMES,
+    SLOT_VOCAB_SIZES,
+    decode_word_indices,
+    indices_to_sentence,
+)
 
 DEFAULT_MODEL_PATH = ROOT_DIR / "checkpoints" / "best_ctc_model_conformer_lite_gap_proj.keras"
+DEFAULT_WORD_MODEL_PATH = ROOT_DIR / "checkpoints" / "word_level_grid"
 PREVIEW_DIR = ROOT_DIR / "demo_api" / "preview_cache"
 EXAMPLE_DIR = ROOT_DIR / "data" / "s3_processed"
 LOCAL_ORIGINS = [
@@ -98,6 +109,7 @@ app.add_middleware(
 )
 
 _MODEL_CACHE: dict[str, LipReadingCTC] = {}
+_WORD_MODEL_CACHE: dict[str, LipReadingWordClassifier] = {}
 _ACTIVE_MODEL_PATH: str | None = None
 _LLM_CACHE: dict[tuple[str, str], LLMPostprocessor] = {}
 
@@ -580,6 +592,177 @@ def _run_inference_from_video_path(
             "model": llm_model if llm_postprocess else None,
         },
     }
+
+
+def _get_or_load_word_model(model_path: str) -> LipReadingWordClassifier:
+    if model_path in _WORD_MODEL_CACHE:
+        return _WORD_MODEL_CACHE[model_path]
+
+    if not os.path.exists(model_path):
+        raise HTTPException(status_code=400, detail=f"Word model path not found: {model_path}")
+
+    def _infer_word_variant_frontend(path: str) -> tuple[str, str]:
+        stem = Path(path).stem.lower()
+        variant = "conformer_lite"
+        frontend = "flatten"
+        for v in sorted(MODEL_VARIANTS, key=len, reverse=True):
+            if f"mv-{v.replace('_', '-')}" in stem or f"_{v}" in stem:
+                variant = v
+                break
+        for f in sorted(FRONTEND_MODELS, key=len, reverse=True):
+            if f"fe-{f.replace('_', '-')}" in stem or f"_{f}" in stem:
+                frontend = f
+                break
+        return variant, frontend
+
+    variant, frontend = _infer_word_variant_frontend(model_path)
+    candidates: list[tuple[str, str]] = [(variant, frontend)]
+    for v in MODEL_VARIANTS:
+        for f in FRONTEND_MODELS:
+            if (v, f) not in candidates:
+                candidates.append((v, f))
+
+    for v, f in candidates:
+        try:
+            m = build_lipreading_word_classifier(model_variant=v, frontend_model=f)
+            _ = m(np.random.randn(1, 75, 80, 120, 1).astype(np.float32))
+            m.load_weights(model_path)
+            _WORD_MODEL_CACHE[model_path] = m
+            print(f"[DemoAPI] Loaded word model '{model_path}' variant='{v}' frontend='{f}'.")
+            return m
+        except Exception:
+            continue
+
+    raise HTTPException(status_code=500, detail=f"Could not load word model: {model_path}")
+
+
+def _resolve_default_word_checkpoint() -> str:
+    if DEFAULT_WORD_MODEL_PATH.is_dir():
+        h5_files = sorted(DEFAULT_WORD_MODEL_PATH.glob("*.weights.h5"))
+        if h5_files:
+            return str(h5_files[-1])
+    raise HTTPException(status_code=404, detail="No word-level checkpoint found in checkpoints/word_level_grid/")
+
+
+def _run_word_inference_from_video_path(
+    video_path: str,
+    file_name: str,
+    content_size_bytes: int,
+    model_path: str | None,
+) -> dict[str, Any]:
+    total_start = time.perf_counter()
+
+    resolved_path = model_path.strip() if model_path and model_path.strip() else None
+    if not resolved_path:
+        resolved_path = _resolve_default_word_checkpoint()
+    if not Path(resolved_path).is_absolute():
+        resolved_path = str((ROOT_DIR / resolved_path).resolve())
+
+    model = _get_or_load_word_model(resolved_path)
+
+    video_meta = _get_video_metadata(video_path)
+    if video_meta["frame_count"] is None or video_meta["width"] is None:
+        raise HTTPException(status_code=400, detail="Uploaded file is not a readable video stream.")
+
+    preview_path = _build_preview_file(video_path, file_name)
+
+    preprocess_start = time.perf_counter()
+    frames = extract_lip_frames(video_path)
+    preprocess_ms = (time.perf_counter() - preprocess_start) * 1000
+
+    if frames is None:
+        raise HTTPException(status_code=400, detail="Could not detect mouth/face region.")
+    if not isinstance(frames, np.ndarray) or frames.ndim != 3:
+        raise HTTPException(status_code=400, detail="Invalid preprocessed frame tensor.")
+
+    crop_samples = _encode_sample_frames(frames, n=6)
+    input_tensor = tf.convert_to_tensor(
+        np.expand_dims(frames, axis=(0, -1)).astype(np.float32)
+    )
+
+    inference_start = time.perf_counter()
+    logits_list = model(input_tensor, training=False)
+    inference_ms = (time.perf_counter() - inference_start) * 1000
+
+    slot_indices = [int(tf.argmax(slot_logits, axis=-1).numpy()[0]) for slot_logits in logits_list]
+    slot_confidences = [float(tf.reduce_max(tf.nn.softmax(slot_logits, axis=-1)).numpy()) for slot_logits in logits_list]
+    slot_words = decode_word_indices(slot_indices)
+    predicted_sentence = " ".join(slot_words)
+
+    reference_text, reference_source = _resolve_reference_text(file_name, None)
+    wer = compute_wer(reference_text, predicted_sentence) if reference_text else None
+    cer = compute_cer(reference_text, predicted_sentence) if reference_text else None
+
+    total_ms = (time.perf_counter() - total_start) * 1000
+
+    return {
+        "predicted_sentence": predicted_sentence,
+        "slot_predictions": [
+            {"slot": SLOT_NAMES[i], "word": slot_words[i], "confidence": slot_confidences[i]}
+            for i in range(len(SLOT_NAMES))
+        ],
+        "reference_text": reference_text,
+        "reference_source": reference_source,
+        "wer": wer,
+        "cer": cer,
+        "model_path_used": resolved_path,
+        "latency_ms": {
+            "preprocess": round(preprocess_ms, 2),
+            "inference": round(inference_ms, 2),
+            "total": round(total_ms, 2),
+        },
+        "video_stats": {
+            "filename": file_name,
+            "size_bytes": content_size_bytes,
+            "width": video_meta["width"],
+            "height": video_meta["height"],
+            "fps": video_meta["fps"],
+            "frame_count": video_meta["frame_count"],
+            "duration_sec": video_meta["duration_sec"],
+            "processed_shape": list(frames.shape),
+        },
+        "preview_url": preview_path,
+        "crop_samples": crop_samples,
+        "device_specs": get_device_specs(),
+    }
+
+
+@app.post("/analyze-word")
+async def analyze_word(
+    file: UploadFile = File(...),
+    model_path: str | None = Form(default=None),
+) -> dict[str, Any]:
+    suffix = Path(file.filename or "upload.bin").suffix or ".bin"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        temp_path = tmp.name
+        content = await file.read()
+        tmp.write(content)
+    try:
+        return _run_word_inference_from_video_path(
+            video_path=temp_path,
+            file_name=file.filename or "upload.bin",
+            content_size_bytes=len(content),
+            model_path=model_path,
+        )
+    finally:
+        try:
+            os.remove(temp_path)
+        except OSError:
+            pass
+
+
+@app.post("/analyze-word-example")
+def analyze_word_example(
+    example_name: str = Form(...),
+    model_path: str | None = Form(default=None),
+) -> dict[str, Any]:
+    example_path = _resolve_example_path(example_name)
+    return _run_word_inference_from_video_path(
+        video_path=str(example_path),
+        file_name=example_path.name,
+        content_size_bytes=example_path.stat().st_size,
+        model_path=model_path,
+    )
 
 
 @app.get("/health")
