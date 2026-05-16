@@ -348,6 +348,23 @@ def list_decoders() -> dict[str, Any]:
     return {"default_mode": DEFAULT_DECODER_MODE, "decoders": list_decoder_specs()}
 
 
+@app.get("/checkpoints")
+def list_checkpoints() -> dict[str, Any]:
+    ckpt_dir = ROOT_DIR / "checkpoints"
+    files = sorted(
+        p.name for p in ckpt_dir.iterdir()
+        if p.is_file() and p.suffix in {".keras", ".h5", ".weights"}
+    ) if ckpt_dir.exists() else []
+    default = DEFAULT_CTC_PATH.name
+    return {
+        "default": default,
+        "checkpoints": [
+            {"name": f, "path": f"checkpoints/{f}", "is_default": f == default}
+            for f in files
+        ],
+    }
+
+
 @app.get("/examples")
 def list_examples(limit: int = 100) -> dict[str, Any]:
     limit = max(1, min(limit, 1000))

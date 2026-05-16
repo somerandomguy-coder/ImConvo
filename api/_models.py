@@ -14,7 +14,8 @@ from src.llm_postprocessor import LLMPostprocessor
 from experiments.word_level_grid.model import LipReadingWordClassifier, build_lipreading_word_classifier
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_CTC_PATH = ROOT_DIR / "checkpoints" / "best_ctc_model_conformer_lite_gap_proj.keras"
+_default_name = os.environ.get("IMCONVO_DEFAULT_MODEL") or "checkpoints/best_ctc_model_conformer_lite_gap_proj.keras"
+DEFAULT_CTC_PATH = Path(_default_name) if Path(_default_name).is_absolute() else ROOT_DIR / _default_name
 DEFAULT_WORD_DIR = ROOT_DIR / "checkpoints" / "word_level_grid"
 
 _CTC_CACHE: dict[str, LipReadingCTC] = {}

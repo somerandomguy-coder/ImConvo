@@ -122,6 +122,22 @@ export interface AnalyzeResponse {
   crop_samples: string[];
 }
 
+export interface CheckpointInfo {
+  name: string;
+  path: string;
+  is_default: boolean;
+}
+
+export interface CheckpointListResponse {
+  default: string;
+  checkpoints: CheckpointInfo[];
+}
+
+export async function listCheckpoints(): Promise<CheckpointListResponse> {
+  const { data } = await demoApi.get<CheckpointListResponse>("/checkpoints");
+  return data;
+}
+
 export async function checkDemoHealth(): Promise<HealthStatus> {
   const { data } = await demoApi.get<HealthStatus>("/health");
   return data;

@@ -230,7 +230,7 @@ def extract_lip_frames(video_path: str) -> "np.ndarray | None":
     cap.release()
 
     if not raw_frames:
-        return np.zeros((MAX_FRAMES, FRAME_HEIGHT, FRAME_WIDTH), dtype=np.float32)
+        return None
 
     # Resample to TARGET_FPS so inference matches training temporal rate
     if abs(source_fps - TARGET_FPS) > 0.5:
@@ -299,8 +299,6 @@ def extract_lip_frames(video_path: str) -> "np.ndarray | None":
         pad = np.zeros((MAX_FRAMES - T, FRAME_HEIGHT, FRAME_WIDTH), dtype=np.float32)
         out = np.concatenate([out, pad], axis=0)
     elif T > MAX_FRAMES:
-        # Uniform subsample: spread MAX_FRAMES indices across the full duration
-        # so no speech is cut — longer videos just have slightly lower temporal resolution
         indices = np.linspace(0, T - 1, MAX_FRAMES).round().astype(int)
         out = out[indices]
 

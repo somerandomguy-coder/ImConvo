@@ -10,9 +10,11 @@ import {
   analyzeWordVideo,
   analyzeWordExample,
   checkDemoHealth,
+  listCheckpoints,
   listDecoders,
   listDemoExamples,
   type AnalyzeResponse,
+  type CheckpointInfo,
   type WordAnalyzeResponse,
   type DecoderSpec,
   type HealthStatus,
@@ -22,6 +24,22 @@ const DEFAULT_MODEL_PATH = "checkpoints/best_ctc_model_conformer_lite_gap_proj.k
 const DEFAULT_DECODER_MODE = "greedy_ctc";
 const DEFAULT_BEAM_WIDTH = 10;
 const DEFAULT_DEBUG_TOP_K = 5;
+
+const KNOWN_CHECKPOINTS: CheckpointInfo[] = [
+  "best_ctc_model_bigru.keras",
+  "best_ctc_model_bilstm.keras",
+  "best_ctc_model_conformer_lite.keras",
+  "best_ctc_model_conformer_lite_gap_proj.keras",
+  "best_ctc_model_conformer_lite_resnet18.keras",
+  "best_ctc_model_gru.keras",
+  "best_ctc_model_tcn.keras",
+  "best_ctc_model_transformer.keras",
+  "best_ctc_model_transformer_medium.keras",
+].map((name) => ({
+  name,
+  path: `checkpoints/${name}`,
+  is_default: name === "best_ctc_model_conformer_lite_gap_proj.keras",
+}));
 
 type Mode = "character" | "word";
 
@@ -37,6 +55,7 @@ export default function DemoInferencePage() {
   const [error, setError] = useState<string | null>(null);
   const [examples, setExamples] = useState<string[]>([]);
   const [selectedExample, setSelectedExample] = useState("");
+  const [checkpoints, setCheckpoints] = useState<CheckpointInfo[]>(KNOWN_CHECKPOINTS);
   const [decoders, setDecoders] = useState<DecoderSpec[]>([]);
   const [decoderMode, setDecoderMode] = useState(DEFAULT_DECODER_MODE);
   const [beamWidth, setBeamWidth] = useState(DEFAULT_BEAM_WIDTH);
@@ -56,6 +75,14 @@ export default function DemoInferencePage() {
         if (!mounted) return;
         setDecoders(data.decoders);
         setDecoderMode(data.default_mode || DEFAULT_DECODER_MODE);
+      })
+      .catch(() => {});
+    listCheckpoints()
+      .then((data) => {
+        if (!mounted) return;
+        setCheckpoints(data.checkpoints);
+        const def = data.checkpoints.find((c) => c.is_default);
+        if (def) setModelPath(def.path);
       })
       .catch(() => {});
     listDemoExamples(120)
@@ -163,8 +190,14 @@ export default function DemoInferencePage() {
             <>
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="space-y-1.5">
-                  <span className="text-xs text-muted">Model path</span>
-                  <input value={modelPath} onChange={(e) => setModelPath(e.target.value)} className={inputClass} placeholder={DEFAULT_MODEL_PATH} />
+                  <span className="text-xs text-muted">Model</span>
+                  <select value={modelPath} onChange={(e) => setModelPath(e.target.value)} className={inputClass}>
+                    {checkpoints.map((c) => (
+                      <option key={c.path} value={c.path}>
+                        {c.name}{c.is_default ? " (default)" : ""}
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label className="space-y-1.5">
                   <span className="text-xs text-muted">Expected text (optional)</span>
