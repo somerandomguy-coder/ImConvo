@@ -53,6 +53,7 @@ CONFIG = {
     "batch_size": 48,
     "num_epochs": 100,
     "learning_rate": 1e-4,
+    "learning_rate": 5e-5,  # Lowered for fine-tuning
     "weight_decay": 1e-4,
     "patience": 9,
     "seed": 42,
@@ -104,13 +105,13 @@ CONFIG = {
             "cosine_alpha": 0.1,
         },
     },
-    "resume_from_best_checkpoint": False,
+    "resume_from_best_checkpoint": True,
     "model_variant": "bigru",
     "frontend_model": "flatten",  # flatten|gap_proj|resnet18
     "augmentation_profile": "off",  # off|spatial|spatiotemporal|strong
     "freeze_config": {
-        "enabled": False,
-        "warmup_epochs": 0,
+        "enabled": True,
+        "warmup_epochs": 5,
         "warmup_freeze": "frontend",  # none|frontend|backbone|frontend_backbone
         "post_warmup": "full_unfreeze",
     },
@@ -653,22 +654,32 @@ def main():
             )
     elif CONFIG["resume_from_best_checkpoint"]:
         resumed_from_variant_checkpoint = False
-        if os.path.exists(variant_checkpoint_path):
+        
+        # 1. Primary Priority: Check for your transplanted .h5 model
+        resumed_from_variant_checkpoint = False
+        
+        # --- NEW: Check for transplanted weights FIRST ---
+        # This prevents the script from loading the .keras file it found in your logs
+        transplanted_h5 = "checkpoints/ctc_pretrained_backbone.weights.h5" 
+        if os.path.exists(transplanted_h5):
             try:
-                model.load_weights(variant_checkpoint_path)
-                print(
-                    "[Checkpoint] Frontend-specific checkpoint missing. "
-                    f"Resumed from variant baseline: {variant_checkpoint_path}"
-                )
+                model.load_weights(transplanted_h5, skip_mismatch=True)
+                print(f"[Checkpoint] SUCCESS: Loaded transplanted weights from {transplanted_h5}")
                 resumed_from_variant_checkpoint = True
             except BaseException as e:
-                print(
-                    f"[Checkpoint] Failed variant baseline resume from {variant_checkpoint_path} "
-                    f"({type(e).__name__}: {e})."
-                )
+                print(f"[Checkpoint] Transplant load failed: {e}. Checking standard checkpoints...")
+
+        # --- Standard Logic (Only runs if transplant wasn't found/loaded) ---
+        if not resumed_from_variant_checkpoint and os.path.exists(variant_checkpoint_path):
+            try:
+                model.load_weights(variant_checkpoint_path)
+                print(f"[Checkpoint] Resumed from variant baseline: {variant_checkpoint_path}")
+                resumed_from_variant_checkpoint = True
+            except BaseException as e:
+                print(f"[Checkpoint] Failed variant resume: {e}")
+
+        # 3. Tertiary Priority: Partial transfer from other baselines (BiGRU/Legacy)
         if model_variant != "bigru" and not resumed_from_variant_checkpoint:
-            # Partial transfer from BiGRU baseline into shared front-end/head layers.
-            # Mismatched backbone layers are skipped by name/shape.
             transfer_source = None
             if os.path.exists(bigru_frontend_checkpoint_path):
                 transfer_source = bigru_frontend_checkpoint_path
@@ -684,6 +695,7 @@ def main():
                         "[Checkpoint] Variant checkpoint missing. "
                         f"Partially initialized from baseline: {transfer_source}"
                     )
+                    resumed_from_variant_checkpoint = True
                 except BaseException as e:
                     print(
                         "[Checkpoint] Partial transfer failed "
@@ -694,12 +706,13 @@ def main():
                     f"[Checkpoint] No variant checkpoint at {best_checkpoint_path} "
                     "and no baseline BiGRU checkpoint found. Training from scratch."
                 )
+        
+        # 4. Final Fallback: Notify if starting from scratch
         elif not resumed_from_variant_checkpoint:
             print(
-                f"[Checkpoint] No previous checkpoint found at {best_checkpoint_path}. "
+                f"[Checkpoint] No previous checkpoint or transplant found. "
                 "Training from scratch."
             )
-
     freeze_cfg = dict(CONFIG.get("freeze_config", {}))
     freeze_enabled = bool(freeze_cfg.get("enabled", False))
     warmup_target = str(freeze_cfg.get("warmup_freeze", "none")).lower()
