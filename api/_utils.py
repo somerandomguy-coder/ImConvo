@@ -146,7 +146,8 @@ def encode_sample_frames(frames: np.ndarray, n: int = 6) -> list[str]:
     indices = [int(i * (T - 1) / (n - 1)) for i in range(n)]
     result = []
     for idx in indices:
-        gray = (frames[idx] * 255).astype(np.uint8)
+        f = frames[idx]
+        gray = f if f.dtype == np.uint8 else (f * 255).astype(np.uint8)
         display = cv2.resize(gray, (480, 320), interpolation=cv2.INTER_NEAREST)
         _, buf = cv2.imencode(".png", display)
         result.append(f"data:image/png;base64,{base64.b64encode(buf.tobytes()).decode()}")

@@ -134,6 +134,28 @@ def _resolve_example_path(example_name: str) -> Path:
     return candidate
 
 
+def _preprocess_video(
+    video_path: str,
+    file_name: str,
+) -> tuple[np.ndarray, dict[str, Any], str | None, float, list[str]]:
+    video_meta = get_video_metadata(video_path)
+    if video_meta["frame_count"] is None or video_meta["width"] is None:
+        raise HTTPException(status_code=400, detail="Uploaded file is not a readable video stream.")
+
+    preview_url = build_preview(video_path, file_name)
+
+    t0 = time.perf_counter()
+    frames = extract_lip_frames(video_path)
+    preprocess_ms = (time.perf_counter() - t0) * 1000
+
+    if frames is None:
+        raise HTTPException(status_code=400, detail="Could not detect mouth/face region.")
+    if not isinstance(frames, np.ndarray) or frames.ndim != 3:
+        raise HTTPException(status_code=400, detail="Invalid preprocessed frame tensor.")
+
+    return frames, video_meta, preview_url, preprocess_ms, encode_sample_frames(frames)
+
+
 def _run_ctc_inference(
     video_path: str,
     file_name: str,
@@ -157,22 +179,7 @@ def _run_ctc_inference(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to load model: {exc}") from exc
 
-    video_meta = get_video_metadata(video_path)
-    if video_meta["frame_count"] is None or video_meta["width"] is None:
-        raise HTTPException(status_code=400, detail="Uploaded file is not a readable video stream.")
-
-    preview_url = build_preview(video_path, file_name)
-
-    t0 = time.perf_counter()
-    frames = extract_lip_frames(video_path)
-    preprocess_ms = (time.perf_counter() - t0) * 1000
-
-    if frames is None:
-        raise HTTPException(status_code=400, detail="Could not detect mouth/face region from uploaded video.")
-    if not isinstance(frames, np.ndarray) or frames.ndim != 3:
-        raise HTTPException(status_code=400, detail="Invalid preprocessed frame tensor.")
-
-    crop_samples = encode_sample_frames(frames)
+    frames, video_meta, preview_url, preprocess_ms, crop_samples = _preprocess_video(video_path, file_name)
     input_tensor = np.expand_dims(frames, axis=(0, -1)).astype(np.float32)
 
     t0 = time.perf_counter()
@@ -266,22 +273,7 @@ def _run_word_inference(
     model = load_word_model(model_path)
     resolved = model_path  # load_word_model already resolved it; re-use path from response
 
-    video_meta = get_video_metadata(video_path)
-    if video_meta["frame_count"] is None or video_meta["width"] is None:
-        raise HTTPException(status_code=400, detail="Uploaded file is not a readable video stream.")
-
-    preview_url = build_preview(video_path, file_name)
-
-    t0 = time.perf_counter()
-    frames = extract_lip_frames(video_path)
-    preprocess_ms = (time.perf_counter() - t0) * 1000
-
-    if frames is None:
-        raise HTTPException(status_code=400, detail="Could not detect mouth/face region.")
-    if not isinstance(frames, np.ndarray) or frames.ndim != 3:
-        raise HTTPException(status_code=400, detail="Invalid preprocessed frame tensor.")
-
-    crop_samples = encode_sample_frames(frames)
+    frames, video_meta, preview_url, preprocess_ms, crop_samples = _preprocess_video(video_path, file_name)
     input_tensor = tf.convert_to_tensor(np.expand_dims(frames, axis=(0, -1)).astype(np.float32))
 
     t0 = time.perf_counter()
