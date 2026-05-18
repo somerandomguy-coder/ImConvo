@@ -1,12 +1,12 @@
 """Verify preprocessed lip-crop quality after running preprocess.py.
 
 Loads N random samples from data/preprocessed/, renders a 6-frame strip per
-sample, and writes a single composite PNG to temp_reports/crop_samples/.
+sample, and writes a single composite PNG to reports/crop_samples/.
 
 Usage:
     python scripts/verify_crop_samples.py
     python scripts/verify_crop_samples.py --n 40 --seed 99
-    python scripts/verify_crop_samples.py --preprocessed_dir ./data/preprocessed/ --output_dir ./temp_reports/crop_samples/
+    python scripts/verify_crop_samples.py --preprocessed_dir ./data/preprocessed/ --output_dir ./reports/crop_samples/
     python scripts/verify_crop_samples.py --samples bbab8n bbac1a   # specific clips (partial match)
 """
 
@@ -183,7 +183,7 @@ def run(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Verify preprocessed lip-crop quality")
     parser.add_argument("--preprocessed_dir", default="./data/preprocessed/")
-    parser.add_argument("--output_dir", default="./temp_reports/crop_samples/")
+    parser.add_argument("--output_dir", default="./reports/crop_samples/")
     parser.add_argument("--n", type=int, default=30, help="Number of random samples to check")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(

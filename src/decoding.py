@@ -20,7 +20,7 @@ from src.utils import BLANK_IDX, MAX_FRAMES, char_indices_to_text, parse_alignme
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-GRID_NGRAM_ARTIFACT = ROOT_DIR / "temp_reports" / "decoder_artifacts" / "grid_word_trigram.json"
+GRID_NGRAM_ARTIFACT = ROOT_DIR / "reports" / "decoder_artifacts" / "grid_word_trigram.json"
 GRID_ALIGN_GLOB = "data/**/align/*.align"
 
 DEFAULT_DECODER_MODE = "greedy_ctc"
