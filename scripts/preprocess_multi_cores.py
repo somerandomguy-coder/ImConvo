@@ -4,10 +4,20 @@ import re
 import sys
 import time
 from functools import partial
+import multiprocessing as mp
 from multiprocessing import Pool, cpu_count
 
 import numpy as np
 
+
+import os
+
+os.environ["DISPLAY"] = ""
+os.environ["MEDIAPIPE_DISABLE_GPU"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ["GLOG_minloglevel"] = "3"
+os.environ["ABSL_LOGGING_MIN_LOG_LEVEL"] = "3"
 # Add project root to path so we can find src.utils
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -120,7 +130,7 @@ def main():
                 if result:
                     valid_names.append(result)
                 
-                if i % 50 == 0 or i == len(samples):
+                if i % 1 == 0 or i == len(samples):
                     elapsed = time.time() - start_time
                     vps = i / elapsed
                     print(f"\rProcessed {i}/{len(samples)} ({vps:.1f} videos/sec)", end="", flush=True)
@@ -136,4 +146,5 @@ def main():
     print(f"Total valid samples saved: {len(valid_names)}")
 
 if __name__ == "__main__":
+    mp.set_start_method("spawn", force=True)
     main()

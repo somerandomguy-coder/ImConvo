@@ -105,12 +105,12 @@ CONFIG = {
             "cosine_alpha": 0.1,
         },
     },
-    "resume_from_best_checkpoint": True,
+    "resume_from_best_checkpoint": False,
     "model_variant": "bigru",
     "frontend_model": "flatten",  # flatten|gap_proj|resnet18
     "augmentation_profile": "off",  # off|spatial|spatiotemporal|strong
     "freeze_config": {
-        "enabled": True,
+        "enabled": False,
         "warmup_epochs": 5,
         "warmup_freeze": "frontend",  # none|frontend|backbone|frontend_backbone
         "post_warmup": "full_unfreeze",

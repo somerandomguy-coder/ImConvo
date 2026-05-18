@@ -8,7 +8,8 @@ yields a tight, speaker-adaptive lip crop on every frame.
 
 import glob
 import os
-
+os.environ["MEDIAPIPE_DISABLE_GPU"] = "1"
+os.environ["ABSL_LOGGING_MIN_LOG_LEVEL"] = "3"
 import urllib.request
 from pathlib import Path
 

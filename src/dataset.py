@@ -184,7 +184,8 @@ def resolve_sample_ids(
 
     if missing:
         preview = ", ".join(missing[:5])
-        raise FileNotFoundError(
+        # instead of raising an exception, we print a warning and return the resolved samples
+        print(
             f"{len(missing)} sample IDs from split are missing .npy/.align. "
             f"First missing: {preview}"
         )
