@@ -1,15 +1,11 @@
 "use client";
 
-import { useTypingEffect } from "@/hooks/useTypingEffect";
-
 interface ResultDisplayProps {
   text: string;
   isLoading: boolean;
 }
 
 export default function ResultDisplay({ text, isLoading }: ResultDisplayProps) {
-  const { displayed, isTyping } = useTypingEffect(text);
-
   if (!isLoading && !text) return null;
 
   return (
@@ -18,16 +14,27 @@ export default function ResultDisplay({ text, isLoading }: ResultDisplayProps) {
       {isLoading ? (
         <div className="flex items-center gap-3">
           <span className="flex gap-1">
-            <span className="animate-bounce-dot h-1.5 w-1.5 rounded-full bg-accent" style={{ animationDelay: "0ms" }} />
-            <span className="animate-bounce-dot h-1.5 w-1.5 rounded-full bg-accent" style={{ animationDelay: "160ms" }} />
-            <span className="animate-bounce-dot h-1.5 w-1.5 rounded-full bg-accent" style={{ animationDelay: "320ms" }} />
+            <span
+              className="animate-bounce-dot h-1.5 w-1.5 rounded-full bg-accent"
+              style={{ animationDelay: "0ms" }}
+            />
+            <span
+              className="animate-bounce-dot h-1.5 w-1.5 rounded-full bg-accent"
+              style={{ animationDelay: "160ms" }}
+            />
+            <span
+              className="animate-bounce-dot h-1.5 w-1.5 rounded-full bg-accent"
+              style={{ animationDelay: "320ms" }}
+            />
           </span>
           <span className="text-sm text-muted">Analyzing lip movements…</span>
         </div>
       ) : (
-        <p className="font-mono text-lg leading-relaxed text-foreground">
-          {displayed}
-          {isTyping && <span className="animate-cursor ml-0.5 text-accent">|</span>}
+        <p
+          key={text}
+          className="font-mono text-lg leading-relaxed text-foreground animate-fade-in"
+        >
+          {text}
         </p>
       )}
     </div>

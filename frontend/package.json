@@ -8,6 +8,8 @@
     "dev:all": "concurrently -k -n API,WEB -c yellow,cyan \"npm run dev:api\" \"npm run dev\"",
     "build": "next build",
     "start": "next start",
+    "start:api": "../.venv/bin/python ../api/main.py --host 127.0.0.1 --port 8001",
+    "start:all": "concurrently -k -n API,WEB -c yellow,cyan \"npm run start:api\" \"npm run start\"",
     "lint": "eslint"
   },
   "dependencies": {

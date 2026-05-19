@@ -1,37 +1,306 @@
 import axios from "axios";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
-const api = axios.create({
+const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 60000,
+  timeout: 180000,
 });
-
-export interface AnalyzeResult {
-  text: string;
-  processing_time: number;
-}
 
 export interface HealthStatus {
   status: string;
   model_loaded: boolean;
+  active_model_path: string | null;
+  tf_version: string;
+  device_used: "CPU" | "GPU";
 }
 
-/** POST /analyze — upload a video file for lip-reading inference */
-export async function analyzeVideo(file: File): Promise<AnalyzeResult> {
-  const formData = new FormData();
-  formData.append("file", file);
+export interface AnalyzeRequest {
+  file: File;
+  modelPath?: string;
+  expectedText?: string;
+  decoderMode?: string;
+  beamWidth?: number;
+  debugTopK?: number;
+  llmPostprocess?: boolean;
+  geminiApiKey?: string;
+  llmModel?: string;
+}
 
-  const { data } = await api.post<AnalyzeResult>("/analyze", formData, {
+export interface AnalyzeExampleRequest {
+  exampleName: string;
+  modelPath?: string;
+  expectedText?: string;
+  decoderMode?: string;
+  beamWidth?: number;
+  debugTopK?: number;
+  llmPostprocess?: boolean;
+  geminiApiKey?: string;
+  llmModel?: string;
+}
+
+export interface DecoderSpec {
+  mode: string;
+  label: string;
+  description: string;
+  available: boolean;
+}
+
+export interface DecoderListResponse {
+  default_mode: string;
+  decoders: DecoderSpec[];
+}
+
+export interface AnalyzeResponse {
+  predicted_text: string;
+  reference_text: string | null;
+  reference_source: "manual" | "align_auto" | "none";
+  wer: number | null;
+  cer: number | null;
+  model_path_used: string;
+  latency_ms: {
+    preprocess: number;
+    inference: number;
+    total: number;
+  };
+  video_stats: {
+    filename: string;
+    size_bytes: number;
+    width: number | null;
+    height: number | null;
+    fps: number | null;
+    frame_count: number | null;
+    duration_sec: number | null;
+    processed_shape: number[];
+  };
+  preview_url: string | null;
+  decoder: {
+    mode: string;
+    label: string;
+    beam_width: number;
+    final_text: string;
+    metadata: {
+      lm_type?: string;
+      lm_artifact?: string;
+      ngram_alpha?: number;
+    };
+    hypotheses: Array<{
+      rank: number;
+      text: string;
+      collapsed_indices: number[];
+      acoustic_score: number | null;
+      lm_score: number | null;
+      combined_score: number | null;
+    }>;
+  };
+  debug: {
+    raw_timestep_indices: number[];
+    raw_timestep_tokens: string[];
+    raw_timestep_text: string;
+    collapsed_indices: number[];
+    collapsed_text: string;
+    decoder_top_k: number;
+  };
+  device_specs: {
+    cpu_model: string | null;
+    cpu_physical_cores: number | null;
+    cpu_logical_cores: number | null;
+    ram_total_gb: number;
+    ram_available_gb: number;
+    gpu_names: string[];
+    gpu_memory_total_mb: number | null;
+    tf_version: string;
+    device_used: "CPU" | "GPU";
+  };
+  llm: {
+    corrected_text: string | null;
+    wer: number | null;
+    cer: number | null;
+    model: string | null;
+  } | null;
+  crop_samples: string[];
+}
+
+export interface CheckpointInfo {
+  name: string;
+  path: string;
+  is_default: boolean;
+}
+
+export interface CheckpointListResponse {
+  default: string;
+  checkpoints: CheckpointInfo[];
+}
+
+export async function listCheckpoints(): Promise<CheckpointListResponse> {
+  const { data } = await apiClient.get<CheckpointListResponse>("/checkpoints");
+  return data;
+}
+
+export async function checkHealth(): Promise<HealthStatus> {
+  const { data } = await apiClient.get<HealthStatus>("/health");
+  return data;
+}
+
+export async function listDecoders(): Promise<DecoderListResponse> {
+  const { data } = await apiClient.get<DecoderListResponse>("/decoders");
+  return data;
+}
+
+export async function analyzeVideo(
+  payload: AnalyzeRequest,
+): Promise<AnalyzeResponse> {
+  const formData = new FormData();
+  formData.append("file", payload.file);
+  if (payload.modelPath?.trim()) {
+    formData.append("model_path", payload.modelPath.trim());
+  }
+  if (payload.expectedText?.trim()) {
+    formData.append("expected_text", payload.expectedText.trim());
+  }
+  if (payload.decoderMode?.trim()) {
+    formData.append("decoder_mode", payload.decoderMode.trim());
+  }
+  if (payload.beamWidth) {
+    formData.append("beam_width", String(payload.beamWidth));
+  }
+  if (payload.debugTopK) {
+    formData.append("debug_top_k", String(payload.debugTopK));
+  }
+  if (payload.llmPostprocess) {
+    formData.append("llm_postprocess", "true");
+  }
+  if (payload.geminiApiKey?.trim()) {
+    formData.append("gemini_api_key", payload.geminiApiKey.trim());
+  }
+  if (payload.llmModel?.trim()) {
+    formData.append("llm_model", payload.llmModel.trim());
+  }
+
+  const { data } = await apiClient.post<AnalyzeResponse>("/analyze", formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
   return data;
 }
 
-/** GET /health — check if backend and model are ready */
-export async function checkHealth(): Promise<HealthStatus> {
-  const { data } = await api.get<HealthStatus>("/health");
+export interface ExampleListResponse {
+  base_dir: string;
+  count: number;
+  examples: string[];
+}
+
+export async function listExamples(
+  limit: number = 100,
+): Promise<ExampleListResponse> {
+  const { data } = await apiClient.get<ExampleListResponse>("/examples", {
+    params: { limit },
+  });
   return data;
 }
 
-export default api;
+export async function analyzeExample(
+  payload: AnalyzeExampleRequest,
+): Promise<AnalyzeResponse> {
+  const formData = new FormData();
+  formData.append("example_name", payload.exampleName);
+  if (payload.modelPath?.trim()) {
+    formData.append("model_path", payload.modelPath.trim());
+  }
+  if (payload.expectedText?.trim()) {
+    formData.append("expected_text", payload.expectedText.trim());
+  }
+  if (payload.decoderMode?.trim()) {
+    formData.append("decoder_mode", payload.decoderMode.trim());
+  }
+  if (payload.beamWidth) {
+    formData.append("beam_width", String(payload.beamWidth));
+  }
+  if (payload.debugTopK) {
+    formData.append("debug_top_k", String(payload.debugTopK));
+  }
+  if (payload.llmPostprocess) {
+    formData.append("llm_postprocess", "true");
+  }
+  if (payload.geminiApiKey?.trim()) {
+    formData.append("gemini_api_key", payload.geminiApiKey.trim());
+  }
+  if (payload.llmModel?.trim()) {
+    formData.append("llm_model", payload.llmModel.trim());
+  }
+
+  const { data } = await apiClient.post<AnalyzeResponse>(
+    "/analyze-example",
+    formData,
+    {
+      headers: { "Content-Type": "multipart/form-data" },
+    },
+  );
+  return data;
+}
+
+export interface SlotPrediction {
+  slot: string;
+  word: string;
+  confidence: number;
+}
+
+export interface WordAnalyzeResponse {
+  predicted_sentence: string;
+  slot_predictions: SlotPrediction[];
+  reference_text: string | null;
+  reference_source: "manual" | "align_auto" | "none";
+  wer: number | null;
+  cer: number | null;
+  model_path_used: string;
+  latency_ms: {
+    preprocess: number;
+    inference: number;
+    total: number;
+  };
+  video_stats: {
+    filename: string;
+    size_bytes: number;
+    width: number | null;
+    height: number | null;
+    fps: number | null;
+    frame_count: number | null;
+    duration_sec: number | null;
+    processed_shape: number[];
+  };
+  preview_url: string | null;
+  crop_samples: string[];
+  device_specs: {
+    cpu_model: string | null;
+    cpu_physical_cores: number | null;
+    cpu_logical_cores: number | null;
+    ram_total_gb: number;
+    ram_available_gb: number;
+    gpu_names: string[];
+    gpu_memory_total_mb: number | null;
+    tf_version: string;
+    device_used: "CPU" | "GPU";
+  };
+}
+
+export async function analyzeWordVideo(file: File, modelPath?: string): Promise<WordAnalyzeResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (modelPath?.trim()) formData.append("model_path", modelPath.trim());
+  const { data } = await apiClient.post<WordAnalyzeResponse>("/analyze-word", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+export async function analyzeWordExample(exampleName: string, modelPath?: string): Promise<WordAnalyzeResponse> {
+  const formData = new FormData();
+  formData.append("example_name", exampleName);
+  if (modelPath?.trim()) formData.append("model_path", modelPath.trim());
+  const { data } = await apiClient.post<WordAnalyzeResponse>("/analyze-word-example", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+export default apiClient;

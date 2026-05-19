@@ -5,20 +5,20 @@ import DemoResultPanel from "@/components/demo/DemoResultPanel";
 import WordResultPanel from "@/components/demo/WordResultPanel";
 import DemoVideoUploader from "@/components/demo/DemoVideoUploader";
 import {
-  analyzeDemoExample,
-  analyzeDemoVideo,
+  analyzeExample,
+  analyzeVideo,
   analyzeWordVideo,
   analyzeWordExample,
-  checkDemoHealth,
+  checkHealth,
   listCheckpoints,
   listDecoders,
-  listDemoExamples,
+  listExamples,
   type AnalyzeResponse,
   type CheckpointInfo,
   type WordAnalyzeResponse,
   type DecoderSpec,
   type HealthStatus,
-} from "@/utils/demoApi";
+} from "@/utils/api";
 
 const DEFAULT_MODEL_PATH = "checkpoints/best_ctc_model_conformer_lite_gap_proj.keras";
 const DEFAULT_DECODER_MODE = "greedy_ctc";
@@ -63,7 +63,7 @@ export default function DemoInferencePage() {
 
   useEffect(() => {
     let mounted = true;
-    checkDemoHealth()
+    checkHealth()
       .then((data) => { if (mounted) setHealth(data); })
       .catch((err: unknown) => {
         if (!mounted) return;
@@ -85,7 +85,7 @@ export default function DemoInferencePage() {
         if (def) setModelPath(def.path);
       })
       .catch(() => {});
-    listDemoExamples(120)
+    listExamples(120)
       .then((data) => {
         if (!mounted) return;
         setExamples(data.examples);
@@ -112,7 +112,7 @@ export default function DemoInferencePage() {
         const res = await analyzeWordVideo(file, undefined);
         setWordResult(res);
       } else {
-        const res = await analyzeDemoVideo({ file, modelPath, expectedText, decoderMode, beamWidth, debugTopK: DEFAULT_DEBUG_TOP_K, llmPostprocess });
+        const res = await analyzeVideo({ file, modelPath, expectedText, decoderMode, beamWidth, debugTopK: DEFAULT_DEBUG_TOP_K, llmPostprocess });
         setCtcResult(res);
       }
     } catch (err) {
@@ -134,7 +134,7 @@ export default function DemoInferencePage() {
         const res = await analyzeWordExample(selectedExample);
         setWordResult(res);
       } else {
-        const res = await analyzeDemoExample({ exampleName: selectedExample, modelPath, expectedText, decoderMode, beamWidth, debugTopK: DEFAULT_DEBUG_TOP_K, llmPostprocess });
+        const res = await analyzeExample({ exampleName: selectedExample, modelPath, expectedText, decoderMode, beamWidth, debugTopK: DEFAULT_DEBUG_TOP_K, llmPostprocess });
         setCtcResult(res);
       }
     } catch (err) {

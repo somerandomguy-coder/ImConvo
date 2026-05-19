@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import type { AnalyzeResponse, HealthStatus } from "@/utils/demoApi";
+import type { AnalyzeResponse, HealthStatus } from "@/utils/api";
 
 interface DemoResultPanelProps {
   isLoading: boolean;

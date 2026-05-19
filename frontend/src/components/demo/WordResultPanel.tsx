@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import type { WordAnalyzeResponse, HealthStatus } from "@/utils/demoApi";
+import type { WordAnalyzeResponse, HealthStatus } from "@/utils/api";
 
 interface WordResultPanelProps {
   isLoading: boolean;
