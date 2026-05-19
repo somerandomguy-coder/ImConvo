@@ -42,7 +42,7 @@ Rules:
 
 
 class LLMPostprocessor:
-    """Post-processes CTC predictions by snapping them to valid GRID sentences."""
+    #Post-processes CTC predictions by snapping them to valid GRID sentences.
 
     DEFAULT_MODEL = "gemini-2.5-flash"
 
@@ -56,11 +56,9 @@ class LLMPostprocessor:
         self._cache: dict[str, str] = {}
 
     def correct(self, pred_text: str) -> str:
-        """Snap noisy CTC text to the nearest valid GRID sentence.
+        """Snap noisy CTC text to the nearest valid GRID sentence"""
 
-        Returns:
-            Corrected 5-word GRID sentence (lowercase).
-        """
+       
         pred_text = pred_text.strip().lower()
         if pred_text in self._cache:
             return self._cache[pred_text]
@@ -84,8 +82,11 @@ class LLMPostprocessor:
             resp = requests.post(url, json=payload, timeout=30)
             resp.raise_for_status()
             data = resp.json()
+            print(f"[LLM] input:    {pred_text!r}")
+            print(f"[LLM] raw resp: {data}")
             parts = data["candidates"][0]["content"].get("parts", [])
             corrected = parts[0]["text"].strip().lower() if parts else _local_nearest(pred_text)
+            print(f"[LLM] corrected: {corrected!r}")
         except Exception as exc:
             print(f"[LLM] API error ({exc}); using edit-distance fallback.")
             corrected = _local_nearest(pred_text)
@@ -96,11 +97,6 @@ class LLMPostprocessor:
     @property
     def cache_size(self) -> int:
         return len(self._cache)
-
-
-# ---------------------------------------------------------------------------
-# Local fallback: minimum edit distance over all valid GRID sentences
-# ---------------------------------------------------------------------------
 
 def _edit_distance(a: str, b: str) -> int:
     m, n = len(a), len(b)

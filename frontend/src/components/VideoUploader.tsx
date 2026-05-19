@@ -81,7 +81,7 @@ export default function VideoUploader({ onFileSelected, onRemoved }: VideoUpload
                 remove();
                 onRemoved?.();
               }}
-              className="ml-3 shrink-0 transition-colors hover:text-foreground"
+              className="ml-3 shrink-0 text-red-500 transition-colors hover:text-red-700"
             >
               Remove
             </button>

@@ -57,7 +57,7 @@ export default function DemoVideoUploader({ file, onChange }: DemoVideoUploaderP
                 if (inputRef.current) inputRef.current.value = "";
                 onChange(null);
               }}
-              className="shrink-0 text-sm text-muted transition-colors hover:text-foreground"
+              className="shrink-0 text-sm text-red-500 transition-colors hover:text-red-700"
               type="button"
             >
               Remove

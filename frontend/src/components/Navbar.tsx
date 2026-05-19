@@ -9,7 +9,7 @@ export default function Navbar() {
           href="/"
           className="flex items-center gap-2 text-sm font-semibold text-foreground transition-opacity hover:opacity-70"
         >
-          <Image src="/logo.png" alt="ImConvo" width={28} height={28} className="rounded" />
+          <Image src="/logo.png" alt="ImConvo" width={80} height={40} className="rounded" />
           ImConvo
         </Link>
         <div className="flex items-center gap-6 text-sm text-muted">
