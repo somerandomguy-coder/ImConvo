@@ -9,7 +9,7 @@ import {
   type WordAnalyzeResponse,
 } from "@/utils/api";
 
-const CTC_MODEL = "checkpoints/best_ctc_model_conformer_lite_gap_proj.keras";
+const CTC_MODEL = "checkpoints/best_ctc_model_conformer_lite.keras";
 
 type Mode = "character" | "word";
 
