@@ -96,9 +96,7 @@ app.add_middleware(
 app.mount("/preview", StaticFiles(directory=str(PREVIEW_DIR)), name="preview")
 
 
-# ---------------------------------------------------------------------------
 # Shared helpers (route-level logic not belonging in _utils or _models)
-# ---------------------------------------------------------------------------
 
 def _resolve_reference_text(file_name: str, expected_text: str | None) -> tuple[str | None, str]:
     if expected_text and expected_text.strip():
@@ -473,10 +471,7 @@ def analyze_word_example(
         model_path=model_path,
     )
 
-
-# ---------------------------------------------------------------------------
 # Entry point
-# ---------------------------------------------------------------------------
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="ImConvo Inference API")

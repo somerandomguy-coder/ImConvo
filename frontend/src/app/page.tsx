@@ -35,18 +35,22 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [uploadKey, setUploadKey] = useState(0);
 
-  const reset = () => {
-    setFile(null);
+  const clearResults = () => {
     setResultText("");
     setWordResult(null);
     setError(null);
     setIsLoading(false);
+  };
+
+  const reset = () => {
+    setFile(null);
+    clearResults();
     setUploadKey((k) => k + 1);
   };
 
   const handleModeChange = (m: Mode) => {
     setMode(m);
-    reset();
+    clearResults();
   };
 
   const handleAnalyze = async () => {
