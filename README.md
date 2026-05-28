@@ -44,7 +44,6 @@ ImConvo/
 │   ├── model.py            # CTC model + all backbone variants
 │   ├── utils.py            # Constants, preprocessing, alignment parsing
 │   └── visualization.py
-├── inference.py            # Real-time webcam inference
 ├── train.py                # CTC training loop
 ├── test.py                 # CTC evaluation
 └── transplant.py           # Transfer backbone weights from isolated model
@@ -120,7 +119,7 @@ GEMINI_API_KEY=your_key_here
 ### Training & Evaluation
 
 ```bash
-python train.py                        # CTC training (bigru default)
+python train.py                        # CTC training
 python train.py --model-variant conformer_lite
 
 python test.py                         # CTC evaluation → reports/eval_result/
@@ -134,18 +133,6 @@ python experiments/word_level_grid/test_word.py
 python experiments/isolated_word_level/train_isolated.py
 python experiments/isolated_word_level/test_isolated.py
 ```
-
-### Real-time Inference
-
-```bash
-python inference.py                                          # laptop webcam
-python inference.py --ip http://192.168.0.69:8080           # IP Webcam (Android/iOS)
-python inference.py --ip 1                                   # camera index 1
-python inference.py --checkpoint-path checkpoints/best_ctc_model_conformer_lite.keras
-python inference.py --llm-postprocess --gemini-api-key <KEY>
-```
-
-Press **q** (with the video window focused) to stop. Keep lips inside the yellow bounding box; the bottom progress bar shows the 75-frame buffer fill.
 
 ### Data Scripts
 
@@ -192,19 +179,3 @@ The frontend expects the API server to be running on port 8001.
 | `pnpm build` | Production build |
 | `pnpm start` | Start production server |
 
----
-
-## Camera Setup
-
-### Option A: Smartphone (useful for WSL2)
-WSL2 cannot easily access internal webcams. Use an IP Webcam app instead.
-
-1. Install [IP Webcam (Android)](https://play.google.com/store/apps/details?id=com.pas.webcam) or iVCam (iOS).
-2. Set resolution to `352 x 288` and frame rate to `25 FPS`.
-3. Run: `python inference.py --ip http://<phone-ip>:8080`
-
-### Option B: Direct USB / Integrated Camera
-
-```bash
-python inference.py --ip 0    # or 1, 2, … for other indices
-```

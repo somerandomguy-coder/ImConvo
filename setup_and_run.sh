@@ -48,12 +48,11 @@ echo "------------------------------------------------"
 echo "✅ Setup Complete. What would you like to do?"
 echo "1) Train the model (train.py)"
 echo "2) Evaluate model on test data (test.py)"
-echo "3) Run Live Inference (inference.py)"
-echo "4) Start API Server (api/main.py — port 8001)"
-echo "5) Start Frontend Dev Server (port 3000)"
-echo "6) Start All (API + Frontend)"
-echo "7) Exit"
-read -p "Select an option [1-7]: " choice
+echo "3) Start API Server (api/main.py — port 8001)"
+echo "4) Start Frontend Dev Server (port 3000)"
+echo "5) Start All (API + Frontend)"
+echo "6) Exit"
+read -p "Select an option [1-6]: " choice
 
 case $choice in
     1)
@@ -64,25 +63,14 @@ case $choice in
         python3 test.py
         ;;
     3)
-        echo "Enter IP Webcam URL (e.g., http://192.168.0.69:8080)"
-        read -p "or camera index (e.g., 0), leave blank for laptop webcam: " ip_url
-        if [[ -z "$ip_url" ]]; then
-            echo "👁️ Starting Inference on laptop webcam..."
-            python3 inference.py
-        else
-            echo "👁️ Starting Inference on $ip_url..."
-            python3 inference.py --ip "$ip_url"
-        fi
-        ;;
-    4)
         echo "🚀 Starting API Server on http://0.0.0.0:8001..."
         python3 -m api.main
         ;;
-    5)
+    4)
         echo "🌐 Starting Frontend Dev Server on http://localhost:3000..."
         cd frontend && pnpm dev
         ;;
-    6)
+    5)
         echo "🚀 Starting API Server (background) on http://0.0.0.0:8001..."
         python3 -m api.main &
         API_PID=$!
@@ -96,7 +84,7 @@ case $choice in
 
         kill $API_PID 2>/dev/null
         ;;
-    7)
+    6)
         echo "👋 Goodbye!"
         exit 0
         ;;
