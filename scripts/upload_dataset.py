@@ -20,9 +20,7 @@ PREPROCESSED_DIR = os.path.join(DATA_DIR, "preprocessed")
 ALIGN_DIR = os.path.join(DATA_DIR, "align")
 
 
-# ---------------------------------------------------------------------------
 # Preprocess
-# ---------------------------------------------------------------------------
 
 
 def run_preprocessing():
@@ -36,9 +34,7 @@ def run_preprocessing():
     print()
 
 
-# ---------------------------------------------------------------------------
 # Upload
-# ---------------------------------------------------------------------------
 
 
 def upload_dataset(dataset_name: str = "GRID_Preprocessed"):

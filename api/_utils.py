@@ -22,9 +22,7 @@ PREVIEW_DIR = ROOT_DIR / "api" / "preview_cache"
 PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
 
 
-# ---------------------------------------------------------------------------
 # Metrics
-# ---------------------------------------------------------------------------
 
 def _levenshtein(a: list, b: list) -> int:
     r, h = len(a), len(b)
@@ -47,9 +45,7 @@ def compute_cer(ref: str, hyp: str) -> float:
     return _levenshtein(list(ref), list(hyp)) / max(len(ref), 1)
 
 
-# ---------------------------------------------------------------------------
 # Device info
-# ---------------------------------------------------------------------------
 
 def get_device_specs() -> dict[str, Any]:
     vm = psutil.virtual_memory()
@@ -101,9 +97,7 @@ def get_device_specs() -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
 # Video helpers
-# ---------------------------------------------------------------------------
 
 def get_video_metadata(path: str) -> dict[str, Any]:
     cap = cv2.VideoCapture(path)

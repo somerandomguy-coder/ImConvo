@@ -108,9 +108,7 @@ def _apply_temporal_augment(frames: tf.Tensor) -> tf.Tensor:
     frames = _apply_temporal_time_mask(frames)
     return frames
 
-# ---------------------------------------------------------------------------
 # Sample discovery
-# ---------------------------------------------------------------------------
 
 
 def discover_samples(preprocessed_dir: str) -> list[tuple[str, str]]:
@@ -213,9 +211,7 @@ def build_split_arrays(
     return npy_paths, np.array(labels, dtype=np.int32), np.array(lengths, dtype=np.int32)
 
 
-# ---------------------------------------------------------------------------
 # tf.data pipeline for CTC
-# ---------------------------------------------------------------------------
 def create_ctc_dataset(
     npy_paths: list[str],
     char_labels: np.ndarray,
@@ -316,9 +312,7 @@ def create_ctc_dataset(
     return dataset
 
 
-# ---------------------------------------------------------------------------
 # High-level pipeline
-# ---------------------------------------------------------------------------
 
 
 def create_dataset_pipeline(

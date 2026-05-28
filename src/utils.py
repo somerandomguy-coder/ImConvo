@@ -1,11 +1,3 @@
-"""
-Shared constants, vocabulary, and video processing utilities
-for the GRID lip reading corpus.
-
-Uses MediaPipe Face Mesh for precise lip landmark detection —
-yields a tight, speaker-adaptive lip crop on every frame.
-"""
-
 import glob
 import os
 import urllib.request
@@ -15,9 +7,7 @@ import cv2
 import mediapipe as mp
 import numpy as np
 
-# ---------------------------------------------------------------------------
 # Video processing constants
-# ---------------------------------------------------------------------------
 
 # Fallback region (used only when MediaPipe detects no face at all)
 FALLBACK_LIP_Y_START = 190
@@ -40,9 +30,7 @@ TARGET_FPS = 25.0  # GRID corpus native fps; all videos resampled to this
 LIP_PAD_X = 0.25
 LIP_PAD_Y = 0.35
 
-# ---------------------------------------------------------------------------
-# MediaPipe FaceLandmarker (Tasks API, mediapipe >= 0.10)
-# ---------------------------------------------------------------------------
+# MediaPipe FaceLandmarker 
 
 # Lip landmark indices from the 478-point FaceLandmarker model
 _LIP_LANDMARK_INDICES: list[int] = [
@@ -121,9 +109,7 @@ def _mediapipe_lip_bbox(
 
     return (x_start, y_start, x_end, y_end)
 
-# ---------------------------------------------------------------------------
 # Character-level vocabulary (for CTC)
-# ---------------------------------------------------------------------------
 
 # a-z = 0..25, space = 26, CTC blank = 27
 CHAR_LIST = list("abcdefghijklmnopqrstuvwxyz")
@@ -161,9 +147,7 @@ def char_indices_to_text(indices: list) -> str:
     return "".join(chars)
 
 
-# ---------------------------------------------------------------------------
 # Alignment parsing
-# ---------------------------------------------------------------------------
 
 
 def parse_alignment_text(align_path: str) -> str:
@@ -199,9 +183,7 @@ def parse_alignment_chars(align_path: str) -> tuple:
     return np.array(indices, dtype=np.int32), length
 
 
-# ---------------------------------------------------------------------------
 # Video lip extraction using MediaPipe 
-# ---------------------------------------------------------------------------
 
 def extract_lip_frames(video_path: str) -> "np.ndarray | None":
     """Load video, detect lip landmarks with MediaPipe, crop, resize, normalise.
