@@ -24,7 +24,9 @@ existing upload/demo flows or any training code.
 - Live, per-word gameplay over the webcam (no record-then-upload, no file picker).
 - One word per round; six rounds per sentence following GRID grammar.
 - Real-time confidence feedback as the player mouths each word.
-- Lives / streak / score, persisted locally.
+- Unlimited retries per word (no lives / no lose state) — the player keeps
+  attempting a word until it is recognized, then advances.
+- Streak / score, persisted locally.
 - Run on the existing web stack (Next.js frontend + FastAPI backend) and webcam.
 
 ### Non-Goals (v1)
@@ -43,7 +45,7 @@ existing upload/demo flows or any training code.
 | Transport | **WebSocket frame streaming** | Lowest latency, true live confidence meter. |
 | Model | **Isolated-word conformer-lite classifier** | Purpose-built for single 25-frame words (top-1 ≈ 0.85 / top-5 ≈ 0.97 in-speaker); already trained; no OOD risk. It already uses the conformer-lite backbone. |
 | Scoring | **Slot-constrained** | Each round targets a known slot; restrict the 51-way softmax to that slot's candidates (e.g. color = best of 4). Dramatically more reliable. |
-| v1 scope | Core 6-round loop + **lives / streak / score** | No timer, no difficulty levels in v1. |
+| v1 scope | Core 6-round loop + **streak / score**, **no lives / no lose state** | No timer, no difficulty levels, no loss condition in v1. |
 
 ### Why not char-level CTC
 Char-level CTC is trained on 75-frame *sentences*; a single padded word is
@@ -73,13 +75,13 @@ Browser (/game)                         FastAPI backend
 │  send frame / control  │ ◀────────── │   slot-constrained softmax  │
 │  recv progress/result  │ progress    │   IsolatedWordClassifier    │
 │ useGame (state machine)│  /result    │   (singleton, lazy-loaded)  │
-│  sentence/round/lives  │             └─────────────────────────────┘
+│  sentence/round/score  │             └─────────────────────────────┘
 │ UI components          │
 └────────────────────────┘
 ```
 
-- **Game/session state lives client-side** (sentence, current round, lives,
-  streak, score). The backend is a stateless-per-round live recognizer that only
+- **Game/session state lives client-side** (sentence, current round, score,
+  streak). The backend is a stateless-per-round live recognizer that only
   holds a short rolling frame buffer per connection.
 - The backend loads the model **once** (singleton, lazy) and serves all
   connections.
@@ -165,21 +167,24 @@ Server → client:
   surfaces connection state so the UI can pause.
 
 ### 7.4 Game state (`hooks/useGame.ts`, a reducer)
-State machine:
+State machine (no lose state):
 ```
 idle → playing(round n, attempting) → roundResult(pass|fail)
      → (pass & n<6) playing(n+1)
      → (pass & n==6) won
-     → (fail & lives>0) playing(n)         // re-attempt same word
-     → (fail & lives==0) lost
-won|lost → idle (retry)
+     → (fail)       playing(n)             // re-attempt same word, unlimited
+won → idle (new sentence)
 ```
-- Tracks: `sentence`, `roundIndex (0..5)`, `lives` (start **3**), `score`,
-  `streak`, `bestStreak`.
-- **Fail = lose one life and re-attempt the same word** (does not skip forward).
-- `score` increments per word passed; `streak` increments per completed sentence
-  (reset on loss). `bestStreak` and cumulative `score` persisted to
-  `localStorage`.
+- Tracks: `sentence`, `roundIndex (0..5)`, `attempts` (per word, informational),
+  `score`, `streak`, `bestStreak`.
+- **No lives / no lose state.** Fail just re-attempts the same word indefinitely;
+  the only terminal state is `won`.
+- `score` increments per word passed; `streak` increments per completed sentence;
+  the player may choose to start a **new sentence** at any time (this resets the
+  current `streak` only if they abandon mid-sentence). `bestStreak` and
+  cumulative `score` persisted to `localStorage`.
+- Optional **Skip word** control (advances without passing, does not add score) —
+  nice-to-have, not required for v1.
 - Pure reducer (frames/WS injected via dispatched events) → unit-testable.
 
 ### 7.5 UI components (`components/game/`)
@@ -187,9 +192,10 @@ won|lost → idle (retry)
 - `WordPrompt` — big target word + slot hint (e.g. "COLOR") + "Ready… GO".
 - `ConfidenceMeter` — animated bar driven by `progress.confidence`; shows
   current top guess; "position your face" when `face:false`.
-- `Hud` — lives (hearts), score, streak / best streak.
-- `RoundFeedback` — pass ✓ / fail ✗ flash between rounds.
-- `ResultScreen` — win/lose summary + **Retry** / **New sentence** buttons.
+- `Hud` — score, streak / best streak, and current-word attempt count.
+- `RoundFeedback` — pass ✓ / "try again" flash between attempts.
+- `ResultScreen` — win summary (all 6 words) + **New sentence** button. No lose
+  screen.
 
 ### 7.6 Round flow (client)
 1. `useGame` picks a sentence on start; shows round `n` word + slot.
@@ -227,14 +233,14 @@ won|lost → idle (retry)
 
 ### Frontend (vitest/jest + RTL, webcam/WS mocked)
 - `generateSentence` always yields one valid word per slot, correct slot names.
-- `useGame` reducer: round transitions, win at 6/6, life loss + re-attempt on
-  fail, loss at 0 lives, score/streak/bestStreak, localStorage persistence.
+- `useGame` reducer: round transitions, win at 6/6, re-attempt same word on fail
+  (no lose state), score/streak/bestStreak, localStorage persistence.
 - Pass mapping from `result` events drives state correctly.
 - Component smoke tests for `ConfidenceMeter`, `Hud`, `ResultScreen` and the
   no-face / disconnected states.
 
 ## 10. Tunable Defaults (summary)
-`lives = 3`, `PASS_THRESHOLD = 0.6`, letters pass = top-3, normal slots = top-1,
+No lives (unlimited retries), `PASS_THRESHOLD = 0.6`, letters pass = top-3, normal slots = top-1,
 `BUFFER_FRAMES = TARGET_FRAMES = 25`, `SCORE_EVERY_N_FRAMES = 3`, capture fps cap
 ~15–25, round window ~1.5s before client `endRound()`.
 
