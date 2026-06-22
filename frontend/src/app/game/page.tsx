@@ -39,6 +39,7 @@ export default function GamePage() {
       attemptingRef.current = false;
       stopCapture();
       dispatch({ type: msg.pass ? "ROUND_PASS" : "ROUND_FAIL" });
+      setMeter({ word: "", confidence: 0, face: true });
     }
   }, [dispatch, stopCapture]);
 

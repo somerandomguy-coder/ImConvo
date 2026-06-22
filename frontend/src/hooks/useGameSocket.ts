@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
+const FRAME_BUFFER_LIMIT = 1_000_000; // bytes; drop frames when the socket is backed up
+
 export type ServerMessage =
   | { type: "progress"; word: string; confidence: number; topk: { word: string; confidence: number }[]; face: boolean }
   | { type: "result"; pass: boolean; word: string; confidence: number; target: string }
@@ -57,7 +59,12 @@ export function useGameSocket(onMessage: (msg: ServerMessage) => void) {
   }, []);
 
   const startRound = useCallback((slotIndex: number, target: string) => send({ type: "start_round", slot_index: slotIndex, target }), [send]);
-  const sendFrame = useCallback((b64: string) => send({ type: "frame", data: b64 }), [send]);
+  const sendFrame = useCallback((b64: string) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN && ws.bufferedAmount < FRAME_BUFFER_LIMIT) {
+      ws.send(JSON.stringify({ type: "frame", data: b64 }));
+    }
+  }, []);
   const endRound = useCallback(() => send({ type: "end_round" }), [send]);
 
   return { connected, startRound, sendFrame, endRound };

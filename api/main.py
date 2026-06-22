@@ -19,6 +19,7 @@ import numpy as np
 import tensorflow as tf
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -521,14 +522,14 @@ async def ws_game(ws: WebSocket) -> None:
 
 
 async def _score_and_emit(ws: WebSocket, frames, slot_index: int, target: str, *, force_result: bool) -> bool:
-    arr = game.preprocess_frames(frames)
+    arr = await run_in_threadpool(game.preprocess_frames, frames)
     if arr is None:
         if force_result:
             await ws.send_json({"type": "result", "pass": False, "word": "", "confidence": 0.0, "target": target})
         else:
             await ws.send_json({"type": "progress", "word": "", "confidence": 0.0, "topk": [], "face": False})
         return False
-    scored = game.score_window(arr, slot_index)
+    scored = await run_in_threadpool(game.score_window, arr, slot_index)
     passed = game.evaluate_pass(slot_index, target, scored["ranked_words"], scored["confidence"])
     if passed or force_result:
         await ws.send_json({
