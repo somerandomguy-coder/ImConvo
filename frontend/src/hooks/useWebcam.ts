@@ -12,6 +12,9 @@ export function useWebcam() {
   useEffect(() => {
     let unmounted = false;
     let stream: MediaStream | null = null;
+    const markReady = () => {
+      if (!unmounted) setReady(true);
+    };
     navigator.mediaDevices
       .getUserMedia({ video: true, audio: false })
       .then((s) => {
@@ -20,9 +23,15 @@ export function useWebcam() {
           s.getTracks().forEach((t) => t.stop());
           return;
         }
-        if (videoRef.current) {
-          videoRef.current.srcObject = s;
-          videoRef.current.onloadedmetadata = () => setReady(true);
+        const v = videoRef.current;
+        if (v) {
+          v.srcObject = s;
+          v.onloadedmetadata = markReady;
+          v.oncanplay = markReady;
+          v.play().catch(() => {});
+          // Metadata may have loaded before these handlers were attached
+          // (StrictMode double-mount / fast cameras) — flip ready now if so.
+          if (v.readyState >= 1) markReady();
         }
       })
       .catch((e) => {
