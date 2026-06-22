@@ -54,7 +54,9 @@ export function useWebcam() {
 
   const grabFrame = useCallback((): string | null => {
     const video = videoRef.current;
-    if (!video || !ready) return null;
+    // Gate on the element's real state rather than the React `ready` flag so
+    // capture works as soon as the feed has pixels, regardless of event timing.
+    if (!video || video.readyState < 2 || video.videoWidth === 0) return null;
     if (!canvasRef.current) {
       canvasRef.current = document.createElement("canvas");
       canvasRef.current.width = CAPTURE_W;
@@ -64,7 +66,7 @@ export function useWebcam() {
     if (!ctx) return null;
     ctx.drawImage(video, 0, 0, CAPTURE_W, CAPTURE_H);
     return canvasRef.current.toDataURL("image/jpeg", 0.7).split(",")[1] ?? null;
-  }, [ready]);
+  }, []);
 
   return { videoRef, ready, error, grabFrame };
 }

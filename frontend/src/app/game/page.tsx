@@ -15,7 +15,7 @@ const FRAME_INTERVAL_MS = 66; // ~15 fps
 
 export default function GamePage() {
   const [state, dispatch] = useGame();
-  const { videoRef, ready, error, grabFrame } = useWebcam();
+  const { videoRef, error, grabFrame } = useWebcam();
   const [meter, setMeter] = useState({ word: "", confidence: 0, face: true });
   const attemptingRef = useRef(false);
   const captureIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -46,7 +46,7 @@ export default function GamePage() {
   const { connected, startRound, sendFrame, endRound } = useGameSocket(onMessage);
 
   const attempt = useCallback(() => {
-    if (attemptingRef.current || !ready || state.status !== "playing") return;
+    if (attemptingRef.current || state.status !== "playing") return;
     attemptingRef.current = true;
     setMeter({ word: "", confidence: 0, face: true });
     startRound(state.roundIndex, state.sentence.words[state.roundIndex]);
@@ -58,8 +58,11 @@ export default function GamePage() {
     windowTimeoutRef.current = setTimeout(() => {
       stopCapture();
       if (attemptingRef.current) endRound();
+      // Always release the guard so the button stays usable even if the
+      // server sends no result (e.g. an empty capture window).
+      attemptingRef.current = false;
     }, ROUND_WINDOW_MS);
-  }, [ready, state.status, state.roundIndex, state.sentence.words, startRound, sendFrame, endRound, grabFrame, stopCapture]);
+  }, [state.status, state.roundIndex, state.sentence.words, startRound, sendFrame, endRound, grabFrame, stopCapture]);
 
   useEffect(() => {
     attemptingRef.current = false;
@@ -81,7 +84,7 @@ export default function GamePage() {
           <RoundFeedback result={state.lastResult} />
           <button
             onClick={attempt}
-            disabled={!ready || !connected}
+            disabled={!connected}
             className="w-full rounded bg-emerald-600 px-4 py-3 text-white disabled:opacity-50"
           >
             {connected ? "Ready… GO" : "Connecting…"}
