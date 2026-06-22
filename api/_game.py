@@ -52,7 +52,7 @@ def evaluate_pass(
 def decode_jpeg(b64: str) -> np.ndarray:
     """Decode a base64 JPEG string into a BGR uint8 frame."""
     try:
-        raw = base64.b64decode(b64, validate=False)
+        raw = base64.b64decode(b64, validate=True)
         arr = np.frombuffer(raw, dtype=np.uint8)
         img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     except Exception as exc:  # noqa: BLE001
