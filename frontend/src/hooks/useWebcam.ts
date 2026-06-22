@@ -3,11 +3,35 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const CAPTURE_W = 240;
 const CAPTURE_H = 180;
 
+function describeCameraError(e: unknown): string {
+  const err = e as { name?: string; message?: string };
+  switch (err?.name) {
+    case "NotAllowedError":
+    case "SecurityError":
+      return "Camera blocked. Click the camera icon in the address bar → Allow, then press Enable camera.";
+    case "NotReadableError":
+    case "AbortError":
+      return "Camera is in use by another app or tab. Close it (or other ImConvo tabs), then press Enable camera.";
+    case "NotFoundError":
+    case "OverconstrainedError":
+      return "No camera found. Connect a webcam, then press Enable camera.";
+    default:
+      return err?.message || "Camera unavailable. Press Enable camera to retry.";
+  }
+}
+
 export function useWebcam() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+
+  const retry = useCallback(() => {
+    setReady(false);
+    setError(null);
+    setAttempt((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     let unmounted = false;
@@ -43,14 +67,14 @@ export function useWebcam() {
         }
       })
       .catch((e) => {
-        if (!unmounted) setError(e?.message || "Camera permission denied");
+        if (!unmounted) setError(describeCameraError(e));
       });
     return () => {
       unmounted = true;
       if (pollId) clearInterval(pollId);
       stream?.getTracks().forEach((t) => t.stop());
     };
-  }, []);
+  }, [attempt]);
 
   const grabFrame = useCallback((): string | null => {
     const video = videoRef.current;
@@ -68,5 +92,5 @@ export function useWebcam() {
     return canvasRef.current.toDataURL("image/jpeg", 0.7).split(",")[1] ?? null;
   }, []);
 
-  return { videoRef, ready, error, grabFrame };
+  return { videoRef, ready, error, grabFrame, retry };
 }

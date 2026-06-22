@@ -15,7 +15,7 @@ const FRAME_INTERVAL_MS = 66; // ~15 fps
 
 export default function GamePage() {
   const [state, dispatch] = useGame();
-  const { videoRef, error, grabFrame } = useWebcam();
+  const { videoRef, error, grabFrame, retry } = useWebcam();
   const [meter, setMeter] = useState({ word: "", confidence: 0, face: true });
   const attemptingRef = useRef(false);
   const captureIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -73,7 +73,17 @@ export default function GamePage() {
   return (
     <main className="mx-auto max-w-xl space-y-6 p-6">
       <Hud score={state.score} streak={state.streak} bestStreak={state.bestStreak} attempts={state.attempts} />
-      {error && <p className="text-rose-600">Camera error: {error}</p>}
+      {error && (
+        <div className="rounded border border-rose-300 bg-rose-50 p-3 text-center">
+          <p className="text-rose-700">{error}</p>
+          <button
+            onClick={retry}
+            className="mt-2 rounded bg-rose-600 px-4 py-2 text-sm text-white hover:bg-rose-700"
+          >
+            Enable camera
+          </button>
+        </div>
+      )}
       <video ref={videoRef} autoPlay playsInline muted className="w-full rounded bg-black" />
       {state.status === "won" ? (
         <ResultScreen onNewSentence={() => dispatch({ type: "NEW_SENTENCE" })} />
