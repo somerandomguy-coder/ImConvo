@@ -28,9 +28,12 @@ SLOT_NAMES: tuple[str, ...] = (
 BUFFER_FRAMES = 25
 TARGET_FRAMES = 25
 SCORE_EVERY_N_FRAMES = 3
-PASS_THRESHOLD = 0.6
 LETTER_SLOT_INDEX = 3
-LETTER_TOPK_PASS = 3
+# Easy difficulty: a round passes when the target is within the slot's top-k
+# model guesses (no confidence gate). Letters have 25 candidates, so they get a
+# wider top-k than the 4–10 candidate slots.
+DEFAULT_PASS_TOPK = 2
+PASS_TOPK = {LETTER_SLOT_INDEX: 5}
 
 
 def slot_candidate_indices(slot_index: int) -> list[int]:
@@ -42,16 +45,16 @@ def evaluate_pass(
     slot_index: int,
     target: str,
     ranked_words: list[str],
-    confidence: float,
+    confidence: float | None = None,
 ) -> bool:
-    """Decide whether a scored window passes the round.
+    """Decide whether a scored window passes the round (easy difficulty).
 
     ranked_words: the slot's candidate words sorted by probability desc.
-    confidence:   probability mass of ranked_words[0] (the top word).
+    A round passes if `target` is within the slot's top-k guesses.
+    `confidence` is accepted for call-site compatibility but unused.
     """
-    if slot_index == LETTER_SLOT_INDEX:
-        return target in ranked_words[:LETTER_TOPK_PASS]
-    return bool(ranked_words and ranked_words[0] == target and confidence >= PASS_THRESHOLD)
+    k = PASS_TOPK.get(slot_index, DEFAULT_PASS_TOPK)
+    return target in ranked_words[:k]
 
 
 def decode_jpeg(b64: str) -> np.ndarray:
