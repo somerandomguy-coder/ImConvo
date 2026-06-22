@@ -18,15 +18,29 @@ export default function GamePage() {
   const { videoRef, ready, error, grabFrame } = useWebcam();
   const [meter, setMeter] = useState({ word: "", confidence: 0, face: true });
   const attemptingRef = useRef(false);
+  const captureIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const windowTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const stopCapture = useCallback(() => {
+    if (captureIntervalRef.current !== null) {
+      clearInterval(captureIntervalRef.current);
+      captureIntervalRef.current = null;
+    }
+    if (windowTimeoutRef.current !== null) {
+      clearTimeout(windowTimeoutRef.current);
+      windowTimeoutRef.current = null;
+    }
+  }, []);
 
   const onMessage = useCallback((msg: ServerMessage) => {
     if (msg.type === "progress") {
       setMeter({ word: msg.word, confidence: msg.confidence, face: msg.face });
     } else if (msg.type === "result") {
       attemptingRef.current = false;
+      stopCapture();
       dispatch({ type: msg.pass ? "ROUND_PASS" : "ROUND_FAIL" });
     }
-  }, [dispatch]);
+  }, [dispatch, stopCapture]);
 
   const { connected, startRound, sendFrame, endRound } = useGameSocket(onMessage);
 
@@ -35,19 +49,22 @@ export default function GamePage() {
     attemptingRef.current = true;
     setMeter({ word: "", confidence: 0, face: true });
     startRound(state.roundIndex, state.sentence.words[state.roundIndex]);
-    const interval = setInterval(() => {
+    stopCapture();
+    captureIntervalRef.current = setInterval(() => {
       const f = grabFrame();
       if (f) sendFrame(f);
     }, FRAME_INTERVAL_MS);
-    setTimeout(() => {
-      clearInterval(interval);
+    windowTimeoutRef.current = setTimeout(() => {
+      stopCapture();
       if (attemptingRef.current) endRound();
     }, ROUND_WINDOW_MS);
-  }, [ready, state.status, state.roundIndex, state.sentence.words, startRound, sendFrame, endRound, grabFrame]);
+  }, [ready, state.status, state.roundIndex, state.sentence.words, startRound, sendFrame, endRound, grabFrame, stopCapture]);
 
   useEffect(() => {
     attemptingRef.current = false;
   }, [state.roundIndex, state.status]);
+
+  useEffect(() => stopCapture, [stopCapture]);
 
   return (
     <main className="mx-auto max-w-xl space-y-6 p-6">
