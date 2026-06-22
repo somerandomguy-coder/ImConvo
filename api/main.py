@@ -5,6 +5,7 @@ Helpers live in _utils.py (pure functions) and _models.py (model cache).
 from __future__ import annotations
 
 import argparse
+import asyncio
 import glob
 import logging
 import os
@@ -481,6 +482,9 @@ def analyze_word_example(
 @app.websocket("/ws/game")
 async def ws_game(ws: WebSocket) -> None:
     await ws.accept()
+    # Warm the isolated-word model in the background so the first GO isn't
+    # delayed by a lazy load. Cached after the first connection.
+    asyncio.create_task(run_in_threadpool(game.get_classifier))
     buffer: deque = deque(maxlen=game.BUFFER_FRAMES)
     slot_index: int | None = None
     target: str | None = None
