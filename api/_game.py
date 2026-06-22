@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import base64
+import os
+from pathlib import Path
 
 import cv2
 import numpy as np
 
-from experiments.isolated_word_level.common import SLOT_VOCABS, WORD_TO_IDX
+from experiments.isolated_word_level.common import IDX_TO_WORD, NUM_WORD_CLASSES, SLOT_VOCABS, WORD_TO_IDX
+from experiments.isolated_word_level.model import build_lipreading_isolated_word_classifier
 from experiments.isolated_word_level.temporal_slicer import slice_and_pad_word_clip
 from src.utils import FRAME_HEIGHT, FRAME_WIDTH, _mediapipe_lip_bbox
 
@@ -85,3 +88,67 @@ def preprocess_frames(bgr_frames: list[np.ndarray]) -> np.ndarray | None:
         stacked, 0, stacked.shape[0], target_frames=TARGET_FRAMES, pad_mode="repeat_last"
     )  # (TARGET_FRAMES, H, W, 1)
     return clip[np.newaxis, ...].astype(np.float32)
+
+
+_ROOT = Path(__file__).resolve().parent.parent
+_ISOLATED_DIR = _ROOT / "checkpoints" / "isolated_word_level"
+
+_classifier = None
+
+
+class IsolatedWordClassifier:
+    """Lazy-loaded singleton wrapper around the isolated-word model."""
+
+    def __init__(self) -> None:
+        self.model = build_lipreading_isolated_word_classifier(
+            model_variant="conformer_lite",
+            frontend_model="flatten",
+            num_word_classes=NUM_WORD_CLASSES,
+        )
+        dummy = np.zeros((1, TARGET_FRAMES, FRAME_HEIGHT, FRAME_WIDTH, 1), dtype=np.float32)
+        _ = self.model(dummy, training=False)
+        self.model.load_weights(self._resolve_weights())
+
+    @staticmethod
+    def _resolve_weights() -> str:
+        env = os.environ.get("IMCONVO_ISOLATED_WEIGHTS")
+        if env:
+            return env
+        files = sorted(_ISOLATED_DIR.glob("*.weights.h5"))
+        if not files:
+            raise FileNotFoundError(f"No isolated-word weights in {_ISOLATED_DIR}")
+        return str(files[-1])
+
+    def predict_logits(self, frames: np.ndarray) -> np.ndarray:
+        return np.asarray(self.model(frames, training=False))
+
+
+def get_classifier() -> IsolatedWordClassifier:
+    global _classifier
+    if _classifier is None:
+        _classifier = IsolatedWordClassifier()
+    return _classifier
+
+
+def _softmax(x: np.ndarray) -> np.ndarray:
+    x = x - np.max(x)
+    e = np.exp(x)
+    return e / np.sum(e)
+
+
+def score_window(frames: np.ndarray, slot_index: int, *, classifier=None, top_k: int = 3) -> dict:
+    clf = classifier if classifier is not None else get_classifier()
+    logits = clf.predict_logits(frames)[0]  # (51,)
+    cand = slot_candidate_indices(slot_index)
+    cand_logits = np.array([logits[i] for i in cand], dtype=np.float32)
+    probs = _softmax(cand_logits)
+    order = np.argsort(-probs)
+    ranked_words = [IDX_TO_WORD[cand[i]] for i in order]
+    ranked_probs = [float(probs[i]) for i in order]
+    topk = [{"word": w, "confidence": p} for w, p in zip(ranked_words[:top_k], ranked_probs[:top_k])]
+    return {
+        "top_word": ranked_words[0],
+        "confidence": ranked_probs[0],
+        "topk": topk,
+        "ranked_words": ranked_words,
+    }
