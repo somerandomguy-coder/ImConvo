@@ -523,9 +523,10 @@ async def ws_game(ws: WebSocket) -> None:
 async def _score_and_emit(ws: WebSocket, frames, slot_index: int, target: str, *, force_result: bool) -> bool:
     arr = game.preprocess_frames(frames)
     if arr is None:
-        await ws.send_json({"type": "progress", "word": "", "confidence": 0.0, "topk": [], "face": False})
         if force_result:
             await ws.send_json({"type": "result", "pass": False, "word": "", "confidence": 0.0, "target": target})
+        else:
+            await ws.send_json({"type": "progress", "word": "", "confidence": 0.0, "topk": [], "face": False})
         return False
     scored = game.score_window(arr, slot_index)
     passed = game.evaluate_pass(slot_index, target, scored["ranked_words"], scored["confidence"])
