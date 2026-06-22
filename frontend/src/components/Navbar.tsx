@@ -13,6 +13,7 @@ export default function Navbar() {
           ImConvo
         </Link>
         <div className="flex items-center gap-6 text-sm text-muted">
+          <Link href="/game" className="transition-colors hover:text-foreground">Game</Link>
           {process.env.NODE_ENV === "development" && (
             <Link href="/demo/inference" className="transition-colors hover:text-foreground">
               Demo
