@@ -10,7 +10,9 @@
     "start": "next start",
     "start:api": "../.venv/bin/python ../api/main.py --host 127.0.0.1 --port 8001",
     "start:all": "concurrently -k -n API,WEB -c yellow,cyan \"npm run start:api\" \"npm run start\"",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "axios": "^1.14.0",
@@ -21,13 +23,18 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^4.7.0",
+    "concurrently": "^9.1.2",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
-    "concurrently": "^9.1.2",
+    "jsdom": "^25.0.1",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^2.1.9"
   }
 }
