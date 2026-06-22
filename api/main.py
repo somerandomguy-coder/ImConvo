@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import logging
 import os
 import sys
 import tempfile
@@ -25,6 +26,8 @@ from fastapi.staticfiles import StaticFiles
 
 import api._game as game
 from experiments.isolated_word_level.common import SLOT_VOCABS
+
+logger = logging.getLogger("imconvo.game")
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
@@ -522,15 +525,20 @@ async def ws_game(ws: WebSocket) -> None:
 
 
 async def _score_and_emit(ws: WebSocket, frames, slot_index: int, target: str, *, force_result: bool) -> bool:
-    arr = await run_in_threadpool(game.preprocess_frames, frames)
-    if arr is None:
-        if force_result:
-            await ws.send_json({"type": "result", "pass": False, "word": "", "confidence": 0.0, "target": target})
-        else:
-            await ws.send_json({"type": "progress", "word": "", "confidence": 0.0, "topk": [], "face": False})
+    try:
+        arr = await run_in_threadpool(game.preprocess_frames, frames)
+        if arr is None:
+            if force_result:
+                await ws.send_json({"type": "result", "pass": False, "word": "", "confidence": 0.0, "target": target})
+            else:
+                await ws.send_json({"type": "progress", "word": "", "confidence": 0.0, "topk": [], "face": False})
+            return False
+        scored = await run_in_threadpool(game.score_window, arr, slot_index)
+        passed = game.evaluate_pass(slot_index, target, scored["ranked_words"], scored["confidence"])
+    except Exception as exc:  # noqa: BLE001 — never let a scoring error kill the socket
+        logger.exception("scoring failed")
+        await ws.send_json({"type": "error", "message": f"recognition failed: {exc}"})
         return False
-    scored = await run_in_threadpool(game.score_window, arr, slot_index)
-    passed = game.evaluate_pass(slot_index, target, scored["ranked_words"], scored["confidence"])
     if passed or force_result:
         await ws.send_json({
             "type": "result",

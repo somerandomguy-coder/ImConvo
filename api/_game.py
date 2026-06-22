@@ -7,6 +7,7 @@ import threading
 from pathlib import Path
 
 import cv2
+import h5py
 import numpy as np
 
 from experiments.isolated_word_level.common import IDX_TO_WORD, NUM_WORD_CLASSES, SLOT_VOCABS, WORD_TO_IDX
@@ -109,7 +110,26 @@ class IsolatedWordClassifier:
         )
         dummy = np.zeros((1, TARGET_FRAMES, FRAME_HEIGHT, FRAME_WIDTH, 1), dtype=np.float32)
         _ = self.model(dummy, training=False)
-        self.model.load_weights(self._resolve_weights())
+        weights_path = self._resolve_weights()
+        # The checkpoint's conformer positional embedding was saved when
+        # MAX_FRAMES was 75; the current build sizes it at MAX_FRAMES (150), so
+        # the shapes differ and Keras drops that one layer. Load everything else
+        # with skip_mismatch, then copy the trained rows into the first 75
+        # positions. Game clips never exceed that length, so this is exact.
+        self.model.load_weights(weights_path, skip_mismatch=True)
+        self._restore_pos_embed(weights_path)
+
+    def _restore_pos_embed(self, weights_path: str) -> None:
+        try:
+            with h5py.File(weights_path, "r") as f:
+                saved = f["conformer_pos_embed/vars/0"][:]
+        except (KeyError, OSError):
+            return
+        emb = self.model.conformer_pos_embed.embeddings
+        cur = emb.numpy()
+        n = min(saved.shape[0], cur.shape[0])
+        cur[:n] = saved[:n]
+        emb.assign(cur)
 
     @staticmethod
     def _resolve_weights() -> str:
