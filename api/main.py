@@ -516,8 +516,6 @@ async def ws_game(ws: WebSocket) -> None:
                     passed = await _score_and_emit(ws, list(buffer), slot_index, target, force_result=False)
                     if passed:
                         slot_index, target = None, None
-                else:
-                    await ws.send_json({"type": "progress", "word": "", "confidence": 0.0, "topk": [], "face": False})
     except WebSocketDisconnect:
         return
 

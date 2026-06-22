@@ -33,16 +33,12 @@ def test_ws_pass_on_correct_word(monkeypatch):
     client = TestClient(app)
     with client.websocket_connect("/ws/game") as ws:
         ws.send_json({"type": "start_round", "slot_index": 1, "target": "blue"})
-        result = None
-        for _ in range(game.SCORE_EVERY_N_FRAMES + 1):
+        for _ in range(game.SCORE_EVERY_N_FRAMES):
             ws.send_json({"type": "frame", "data": _jpeg_b64()})
-            msg = ws.receive_json()
-            if msg["type"] == "result":
-                result = msg
-                break
-        assert result is not None
-        assert result["pass"] is True
-        assert result["word"] == "blue"
+        msg = ws.receive_json()
+        assert msg["type"] == "result"
+        assert msg["pass"] is True
+        assert msg["word"] == "blue"
 
 
 def test_ws_reports_no_face(monkeypatch):
