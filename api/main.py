@@ -10,6 +10,7 @@ import os
 import sys
 import tempfile
 import time
+from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -17,9 +18,12 @@ from typing import Any
 import numpy as np
 import tensorflow as tf
 import uvicorn
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+
+import api._game as game
+from experiments.isolated_word_level.common import SLOT_VOCABS
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
@@ -468,6 +472,83 @@ def analyze_word_example(
         content_size_bytes=path.stat().st_size,
         model_path=model_path,
     )
+
+
+@app.websocket("/ws/game")
+async def ws_game(ws: WebSocket) -> None:
+    await ws.accept()
+    buffer: deque = deque(maxlen=game.BUFFER_FRAMES)
+    slot_index: int | None = None
+    target: str | None = None
+    frames_since_score = 0
+    try:
+        while True:
+            msg = await ws.receive_json()
+            kind = msg.get("type")
+
+            if kind == "ping":
+                await ws.send_json({"type": "pong"})
+
+            elif kind == "start_round":
+                slot_index = int(msg.get("slot_index", -1))
+                target = str(msg.get("target", ""))
+                buffer.clear()
+                frames_since_score = 0
+                if not (0 <= slot_index < len(SLOT_VOCABS)) or target not in SLOT_VOCABS[slot_index]:
+                    await ws.send_json({"type": "error", "message": "invalid slot or target"})
+                    slot_index, target = None, None
+
+            elif kind == "end_round":
+                if slot_index is not None and target is not None and buffer:
+                    await _score_and_emit(ws, list(buffer), slot_index, target, force_result=True)
+                slot_index, target = None, None
+
+            elif kind == "frame":
+                if slot_index is None or target is None:
+                    continue
+                try:
+                    buffer.append(game.decode_jpeg(msg.get("data", "")))
+                except ValueError:
+                    continue
+                frames_since_score += 1
+                if frames_since_score >= game.SCORE_EVERY_N_FRAMES:
+                    frames_since_score = 0
+                    passed = await _score_and_emit(ws, list(buffer), slot_index, target, force_result=False)
+                    if passed:
+                        slot_index, target = None, None
+                else:
+                    await ws.send_json({"type": "progress", "word": "", "confidence": 0.0, "topk": [], "face": False})
+    except WebSocketDisconnect:
+        return
+
+
+async def _score_and_emit(ws: WebSocket, frames, slot_index: int, target: str, *, force_result: bool) -> bool:
+    arr = game.preprocess_frames(frames)
+    if arr is None:
+        await ws.send_json({"type": "progress", "word": "", "confidence": 0.0, "topk": [], "face": False})
+        if force_result:
+            await ws.send_json({"type": "result", "pass": False, "word": "", "confidence": 0.0, "target": target})
+        return False
+    scored = game.score_window(arr, slot_index)
+    passed = game.evaluate_pass(slot_index, target, scored["ranked_words"], scored["confidence"])
+    if passed or force_result:
+        await ws.send_json({
+            "type": "result",
+            "pass": passed,
+            "word": scored["top_word"],
+            "confidence": scored["confidence"],
+            "target": target,
+        })
+    else:
+        await ws.send_json({
+            "type": "progress",
+            "word": scored["top_word"],
+            "confidence": scored["confidence"],
+            "topk": scored["topk"],
+            "face": True,
+        })
+    return passed
+
 
 # Entry point
 
