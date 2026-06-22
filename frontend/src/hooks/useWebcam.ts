@@ -10,18 +10,28 @@ export function useWebcam() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let unmounted = false;
     let stream: MediaStream | null = null;
     navigator.mediaDevices
       .getUserMedia({ video: true, audio: false })
       .then((s) => {
         stream = s;
+        if (unmounted) {
+          s.getTracks().forEach((t) => t.stop());
+          return;
+        }
         if (videoRef.current) {
           videoRef.current.srcObject = s;
           videoRef.current.onloadedmetadata = () => setReady(true);
         }
       })
-      .catch((e) => setError(e?.message || "Camera permission denied"));
-    return () => stream?.getTracks().forEach((t) => t.stop());
+      .catch((e) => {
+        if (!unmounted) setError(e?.message || "Camera permission denied");
+      });
+    return () => {
+      unmounted = true;
+      stream?.getTracks().forEach((t) => t.stop());
+    };
   }, []);
 
   const grabFrame = useCallback((): string | null => {

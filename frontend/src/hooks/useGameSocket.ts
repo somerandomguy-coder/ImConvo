@@ -33,11 +33,13 @@ export function useGameSocket(onMessage: (msg: ServerMessage) => void) {
         if (!closed) retry = setTimeout(connect, 1000);
       };
       ws.onmessage = (e) => {
+        let parsed: ServerMessage;
         try {
-          onMessageRef.current(JSON.parse(e.data) as ServerMessage);
+          parsed = JSON.parse(e.data) as ServerMessage;
         } catch {
-          /* ignore malformed */
+          return; // ignore malformed frames
         }
+        onMessageRef.current(parsed);
       };
     };
     connect();

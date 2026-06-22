@@ -8,4 +8,7 @@ describe("wsUrlFromApi", () => {
   it("maps https to wss", () => {
     expect(wsUrlFromApi("https://api.example.com")).toBe("wss://api.example.com/ws/game");
   });
+  it("strips a trailing slash", () => {
+    expect(wsUrlFromApi("http://localhost:8001/")).toBe("ws://localhost:8001/ws/game");
+  });
 });
