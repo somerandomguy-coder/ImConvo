@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import os
+import threading
 from pathlib import Path
 
 import cv2
@@ -94,6 +95,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 _ISOLATED_DIR = _ROOT / "checkpoints" / "isolated_word_level"
 
 _classifier = None
+_classifier_lock = threading.Lock()
 
 
 class IsolatedWordClassifier:
@@ -126,7 +128,9 @@ class IsolatedWordClassifier:
 def get_classifier() -> IsolatedWordClassifier:
     global _classifier
     if _classifier is None:
-        _classifier = IsolatedWordClassifier()
+        with _classifier_lock:
+            if _classifier is None:
+                _classifier = IsolatedWordClassifier()
     return _classifier
 
 

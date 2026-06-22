@@ -33,7 +33,7 @@ def test_score_window_restricts_to_slot_and_picks_top():
 def test_score_window_confidence_is_softmax_over_slot_only():
     frames = np.zeros((1, game.TARGET_FRAMES, game.FRAME_HEIGHT, game.FRAME_WIDTH, 1), dtype=np.float32)
     # Equal logits across the 4 colors -> ~0.25 each.
-    logits = np.full((1, NUM_WORD_CLASSES), -50.0, dtype=np.float32)
+    logits = np.full((1, NUM_WORD_CLASSES), 0.0, dtype=np.float32)
     for w in ("blue", "green", "red", "white"):
         logits[0, WORD_TO_IDX[w]] = 1.0
     out = game.score_window(frames, slot_index=1, classifier=_FakeClassifier(logits))
