@@ -12,6 +12,7 @@ export function useWebcam() {
   useEffect(() => {
     let unmounted = false;
     let stream: MediaStream | null = null;
+    let pollId: ReturnType<typeof setInterval> | null = null;
     const markReady = () => {
       if (!unmounted) setReady(true);
     };
@@ -29,9 +30,16 @@ export function useWebcam() {
           v.onloadedmetadata = markReady;
           v.oncanplay = markReady;
           v.play().catch(() => {});
-          // Metadata may have loaded before these handlers were attached
-          // (StrictMode double-mount / fast cameras) — flip ready now if so.
-          if (v.readyState >= 1) markReady();
+          // Events above can be missed (StrictMode double-mount / handler
+          // attached after the event fired). Poll the element's real state as
+          // a bulletproof fallback: ready once it actually has pixel data.
+          pollId = setInterval(() => {
+            const el = videoRef.current;
+            if (el && el.readyState >= 2 && el.videoWidth > 0) {
+              markReady();
+              if (pollId) clearInterval(pollId);
+            }
+          }, 200);
         }
       })
       .catch((e) => {
@@ -39,6 +47,7 @@ export function useWebcam() {
       });
     return () => {
       unmounted = true;
+      if (pollId) clearInterval(pollId);
       stream?.getTracks().forEach((t) => t.stop());
     };
   }, []);
