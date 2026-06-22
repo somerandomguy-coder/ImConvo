@@ -26,6 +26,7 @@ describe("gameReducer", () => {
     expect(s1.score).toBe(0);
     expect(s1.attempts).toBe(1);
     expect(s1.status).toBe("playing");
+    expect(s1.lastResult).toBe("fail");
   });
 
   it("wins after six passes and bumps streak", () => {
@@ -35,6 +36,7 @@ describe("gameReducer", () => {
     expect(s.streak).toBe(1);
     expect(s.bestStreak).toBe(1);
     expect(localStorage.getItem("imconvo.game.bestStreak")).toBe("1");
+    expect(localStorage.getItem("imconvo.game.score")).toBe("6");
   });
 
   it("starts a new sentence and resets round/attempts", () => {
@@ -44,5 +46,16 @@ describe("gameReducer", () => {
     expect(s.roundIndex).toBe(0);
     expect(s.attempts).toBe(0);
     expect(s.status).toBe("playing");
+  });
+
+  it("preserves streak when starting a new sentence after a win", () => {
+    let s = initGameState(SENTENCE);
+    for (let i = 0; i < 6; i++) s = gameReducer(s, { type: "ROUND_PASS" });
+    expect(s.status).toBe("won");
+    expect(s.streak).toBe(1);
+    s = gameReducer(s, { type: "NEW_SENTENCE", sentence: SENTENCE });
+    expect(s.status).toBe("playing");
+    expect(s.roundIndex).toBe(0);
+    expect(s.streak).toBe(1); // preserved because previous status was "won"
   });
 });
