@@ -530,6 +530,8 @@ async def ws_game(ws: WebSocket) -> None:
                     frames_since_score = 0
                     scored = await _score(list(buffer), slot_index)
                     if scored is None:
+                        streak = 0
+                        last_match_word = None
                         await ws.send_json({"type": "progress", "word": "", "confidence": 0.0, "topk": [], "face": False})
                     else:
                         match = game.evaluate_pass(slot_index, target, scored["ranked_words"], scored["confidence"])

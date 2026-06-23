@@ -103,3 +103,47 @@ def test_streak_resets_on_no_match(monkeypatch):
         msg = ws.receive_json()
         # streak hits 2 -> pass
         assert msg["type"] == "result" and msg["pass"] is True
+
+def test_no_face_window_resets_streak(monkeypatch):
+    import api._game as game_mod
+    import time as _time
+    client = TestClient(app)
+    state = {"face": True}
+
+    def patched_preprocess(f):
+        return np.zeros((1,1), dtype=np.float32) if state["face"] else None
+    monkeypatch.setattr(game_mod, "preprocess_frames", patched_preprocess)
+    monkeypatch.setattr(game_mod, "score_window", lambda f, s, **k: {
+        "top_word": "blue", "confidence": 0.99,
+        "topk": [{"word": "blue", "confidence": 0.99}],
+        "ranked_words": ["blue", "green", "red", "white"],
+    })
+
+    with client.websocket_connect("/ws/game") as ws:
+        ws.send_json({"type": "start_round", "slot_index": 1, "target": "blue"})
+        _time.sleep((game_mod.PASS_WARMUP_MS / 1000.0) + 0.05)
+
+        # 1st post-warmup matching window -> streak=1, progress
+        for _ in range(game_mod.SCORE_EVERY_N_FRAMES):
+            ws.send_json({"type": "frame", "data": _jpeg()})
+        msg = ws.receive_json()
+        assert msg["type"] == "progress" and msg["face"] is True
+
+        # no-face window -> streak resets
+        state["face"] = False
+        for _ in range(game_mod.SCORE_EVERY_N_FRAMES):
+            ws.send_json({"type": "frame", "data": _jpeg()})
+        msg = ws.receive_json()
+        assert msg["type"] == "progress" and msg["face"] is False
+
+        # back to face — should still need 2 fresh matching windows
+        state["face"] = True
+        for _ in range(game_mod.SCORE_EVERY_N_FRAMES):
+            ws.send_json({"type": "frame", "data": _jpeg()})
+        msg = ws.receive_json()
+        assert msg["type"] == "progress", msg  # streak=1, no pass yet
+
+        for _ in range(game_mod.SCORE_EVERY_N_FRAMES):
+            ws.send_json({"type": "frame", "data": _jpeg()})
+        msg = ws.receive_json()
+        assert msg["type"] == "result" and msg["pass"] is True
