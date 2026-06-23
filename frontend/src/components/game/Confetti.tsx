@@ -5,6 +5,10 @@ export function Confetti({ fireKey, big = false }: { fireKey: number; big?: bool
   const last = useRef(0);
   useEffect(() => {
     if (fireKey === last.current || fireKey <= 0) return;
+    if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      last.current = fireKey;
+      return;
+    }
     last.current = fireKey;
     try {
       confetti({

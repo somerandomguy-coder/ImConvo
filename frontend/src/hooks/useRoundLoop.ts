@@ -25,6 +25,7 @@ export function useRoundLoop(params: RoundLoopParams) {
   const captureRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const passedRef = useRef(false);
+  const rearming = useRef(false);
 
   const stop = useCallback(() => {
     if (captureRef.current !== null) { clearInterval(captureRef.current); captureRef.current = null; }
@@ -34,6 +35,7 @@ export function useRoundLoop(params: RoundLoopParams) {
   const arm = useCallback(() => {
     const p = ref.current;
     stop();
+    rearming.current = false;
     passedRef.current = false;
     setMeter({ word: "", confidence: 0, face: true });
     setSecondsLeft(p.roundSeconds ?? 6);
@@ -55,8 +57,9 @@ export function useRoundLoop(params: RoundLoopParams) {
   }, [active, roundIndex, target, arm, stop]);
 
   useEffect(() => {
-    if (!active || secondsLeft > 0 || passedRef.current) return;
+    if (!active || secondsLeft > 0 || passedRef.current || rearming.current) return;
     const p = ref.current;
+    rearming.current = true;
     p.endRound();
     p.onTimeout?.();
     arm();

@@ -46,7 +46,7 @@ export default function GamePage() {
   }, [state.status, play]);
 
   return (
-    <main style={{ maxWidth: 720, margin: "0 auto", padding: 16 }}>
+    <div style={{ maxWidth: 720, margin: "0 auto", padding: 16 }}>
       <CorridorScene videoRef={videoRef} words={state.sentence.words} slots={state.sentence.slots} roundIndex={state.roundIndex}>
         <ScoreBadge score={state.score} />
         <ProgressDots total={state.sentence.words.length} roundIndex={state.roundIndex} />
@@ -61,6 +61,6 @@ export default function GamePage() {
         )}
       </CorridorScene>
       <Confetti fireKey={confettiKey} big={state.status === "won"} />
-    </main>
+    </div>
   );
 }
