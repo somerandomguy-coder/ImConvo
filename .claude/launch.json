@@ -5,7 +5,8 @@
       "name": "ImConvo API (FastAPI :8001)",
       "runtimeExecutable": "/Users/maverick/Desktop/UTS/DeepLearning/ImConvo/.venv/bin/python",
       "runtimeArgs": ["-m", "api.main", "--host", "127.0.0.1", "--port", "8001"],
-      "port": 8001
+      "port": 8001,
+      "autoPort": false
     },
     {
       "name": "ImConvo Web (Next.js :3000)",

@@ -1,4 +1,5 @@
 import base64
+import time
 
 import cv2
 import numpy as np
@@ -33,9 +34,19 @@ def test_ws_pass_on_correct_word(monkeypatch):
     client = TestClient(app)
     with client.websocket_connect("/ws/game") as ws:
         ws.send_json({"type": "start_round", "slot_index": 1, "target": "blue"})
+        # First scoring window during warmup: will emit progress, not result
         for _ in range(game.SCORE_EVERY_N_FRAMES):
             ws.send_json({"type": "frame", "data": _jpeg_b64()})
         msg = ws.receive_json()
+        assert msg["type"] == "progress"
+        # Wait for warmup to pass, then send frames to build streak
+        time.sleep((game.PASS_WARMUP_MS / 1000.0) + 0.05)
+        for batch_idx in range(game.PASS_STREAK_REQUIRED + 1):
+            for _ in range(game.SCORE_EVERY_N_FRAMES):
+                ws.send_json({"type": "frame", "data": _jpeg_b64()})
+            msg = ws.receive_json()
+            if msg["type"] == "result":
+                break
         assert msg["type"] == "result"
         assert msg["pass"] is True
         assert msg["word"] == "blue"

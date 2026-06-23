@@ -34,6 +34,11 @@ LETTER_SLOT_INDEX = 3
 # wider top-k than the 4–10 candidate slots.
 DEFAULT_PASS_TOPK = 2
 PASS_TOPK = {LETTER_SLOT_INDEX: 5}
+# Pass rule: mouth must be visible for at least PASS_WARMUP_MS before
+# the streak counter is reset. A pass requires PASS_STREAK_REQUIRED
+# consecutive match frames (only after warmup).
+PASS_WARMUP_MS = 1200
+PASS_STREAK_REQUIRED = 2
 
 
 def slot_candidate_indices(slot_index: int) -> list[int]:

@@ -489,6 +489,9 @@ async def ws_game(ws: WebSocket) -> None:
     slot_index: int | None = None
     target: str | None = None
     frames_since_score = 0
+    round_started_at: float | None = None
+    streak = 0
+    last_match_word: str | None = None
     try:
         while True:
             msg = await ws.receive_json()
@@ -502,6 +505,9 @@ async def ws_game(ws: WebSocket) -> None:
                 target = str(msg.get("target", ""))
                 buffer.clear()
                 frames_since_score = 0
+                round_started_at = time.monotonic()
+                streak = 0
+                last_match_word = None
                 if not (0 <= slot_index < len(SLOT_VOCABS)) or target not in SLOT_VOCABS[slot_index]:
                     await ws.send_json({"type": "error", "message": "invalid slot or target"})
                     slot_index, target = None, None
@@ -510,6 +516,7 @@ async def ws_game(ws: WebSocket) -> None:
                 if slot_index is not None and target is not None and buffer:
                     await _score_and_emit(ws, list(buffer), slot_index, target, force_result=True)
                 slot_index, target = None, None
+                round_started_at, streak, last_match_word = None, 0, None
 
             elif kind == "frame":
                 if slot_index is None or target is None:
@@ -521,11 +528,55 @@ async def ws_game(ws: WebSocket) -> None:
                 frames_since_score += 1
                 if frames_since_score >= game.SCORE_EVERY_N_FRAMES:
                     frames_since_score = 0
-                    passed = await _score_and_emit(ws, list(buffer), slot_index, target, force_result=False)
-                    if passed:
-                        slot_index, target = None, None
+                    scored = await _score(list(buffer), slot_index)
+                    if scored is None:
+                        await ws.send_json({"type": "progress", "word": "", "confidence": 0.0, "topk": [], "face": False})
+                    else:
+                        match = game.evaluate_pass(slot_index, target, scored["ranked_words"], scored["confidence"])
+                        if match and last_match_word == target:
+                            streak += 1
+                        elif match:
+                            streak = 1
+                            last_match_word = target
+                        else:
+                            streak = 0
+                            last_match_word = None
+                        elapsed_ms = (time.monotonic() - (round_started_at or time.monotonic())) * 1000.0
+                        passed = (
+                            match
+                            and streak >= game.PASS_STREAK_REQUIRED
+                            and elapsed_ms >= game.PASS_WARMUP_MS
+                        )
+                        if passed:
+                            await ws.send_json({
+                                "type": "result", "pass": True,
+                                "word": scored["top_word"],
+                                "confidence": scored["confidence"],
+                                "target": target,
+                            })
+                            slot_index, target = None, None
+                            round_started_at, streak, last_match_word = None, 0, None
+                        else:
+                            await ws.send_json({
+                                "type": "progress",
+                                "word": scored["top_word"],
+                                "confidence": scored["confidence"],
+                                "topk": scored["topk"],
+                                "face": True,
+                            })
     except WebSocketDisconnect:
         return
+
+
+async def _score(frames, slot_index: int):
+    try:
+        arr = await run_in_threadpool(game.preprocess_frames, frames)
+        if arr is None:
+            return None
+        return await run_in_threadpool(game.score_window, arr, slot_index)
+    except Exception as exc:
+        logger.exception("scoring failed")
+        return None
 
 
 async def _score_and_emit(ws: WebSocket, frames, slot_index: int, target: str, *, force_result: bool) -> bool:
