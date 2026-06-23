@@ -58,4 +58,15 @@ describe("useRoundLoop", () => {
     act(() => result.current.handleMessage({ type: "progress", word: "blue", confidence: 0.5, topk: [], face: true }));
     expect(result.current.meter).toEqual({ word: "blue", confidence: 0.5, face: true });
   });
+
+  it("stops capturing when active goes false", () => {
+    const p = makeParams();
+    const { rerender } = renderHook((props) => useRoundLoop(props), { initialProps: p });
+    act(() => { vi.advanceTimersByTime(200); });
+    expect(p.sendFrame).toHaveBeenCalled();
+    p.sendFrame.mockClear();
+    rerender({ ...p, active: false });
+    act(() => { vi.advanceTimersByTime(300); });
+    expect(p.sendFrame).not.toHaveBeenCalled();
+  });
 });

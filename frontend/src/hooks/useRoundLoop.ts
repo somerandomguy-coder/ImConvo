@@ -16,7 +16,7 @@ type RoundLoopParams = {
 };
 
 export function useRoundLoop(params: RoundLoopParams) {
-  const { active, roundIndex, target, roundSeconds = 6, frameIntervalMs = 66 } = params;
+  const { active, roundIndex, target, roundSeconds = 6 } = params;
   const [secondsLeft, setSecondsLeft] = useState(roundSeconds);
   const [meter, setMeter] = useState({ word: "", confidence: 0, face: true });
 
@@ -39,21 +39,12 @@ export function useRoundLoop(params: RoundLoopParams) {
     setSecondsLeft(p.roundSeconds ?? 6);
     p.startRound(p.roundIndex, p.target);
     captureRef.current = setInterval(() => {
-      const f = p.grabFrame();
-      if (f) p.sendFrame(f);
+      const pp = ref.current;
+      const f = pp.grabFrame();
+      if (f) pp.sendFrame(f);
     }, p.frameIntervalMs ?? 66);
     tickRef.current = setInterval(() => {
-      setSecondsLeft((s) => {
-        if (s <= 1) {
-          const pp = ref.current;
-          pp.endRound();
-          pp.onTimeout?.();
-          passedRef.current = false;
-          pp.startRound(pp.roundIndex, pp.target);
-          return pp.roundSeconds ?? 6;
-        }
-        return s - 1;
-      });
+      setSecondsLeft((s) => (s <= 0 ? 0 : s - 1));
     }, 1000);
   }, [stop]);
 
@@ -62,6 +53,14 @@ export function useRoundLoop(params: RoundLoopParams) {
     arm();
     return stop;
   }, [active, roundIndex, target, arm, stop]);
+
+  useEffect(() => {
+    if (!active || secondsLeft > 0 || passedRef.current) return;
+    const p = ref.current;
+    p.endRound();
+    p.onTimeout?.();
+    arm();
+  }, [active, secondsLeft, arm]);
 
   const handleMessage = useCallback((msg: ServerMessage) => {
     if (msg.type === "progress") {
