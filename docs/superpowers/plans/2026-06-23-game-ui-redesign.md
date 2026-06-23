@@ -32,12 +32,13 @@
 - Tests under `frontend/src/hooks/__tests__/` and `frontend/src/components/game/__tests__/`.
 
 **Modify:**
-- `frontend/src/components/game/ConfidenceMeter.tsx` — candy restyle (same props).
 - `frontend/src/components/game/ResultScreen.tsx` — candy win screen (same props).
 - `frontend/src/app/game/page.tsx` — wire the new flow + scene.
 - `frontend/package.json` — add `canvas-confetti`.
 
-**Leave as-is:** `Hud.tsx`, `RoundFeedback.tsx`, `WordPrompt.tsx` become unused after the redesign — delete them in Task 8 to avoid dead code.
+**Removed by user request — no confidence bar:** `ConfidenceMeter.tsx` (and its test) is deleted; the play screen shows NO live meter. Feedback is the confetti/advance on pass only (matches the reference). The camera feed must show the user's face **clearly** (full opacity, minimal overlay tint).
+
+**Deleted (now unused):** `Hud.tsx`, `RoundFeedback.tsx`, `WordPrompt.tsx`, `ConfidenceMeter.tsx` and `__tests__/ConfidenceMeter.test.tsx` — remove in Task 8.
 
 ---
 
@@ -268,22 +269,18 @@ git commit -m "feat(game): candy ScoreBadge and ProgressDots"
 
 ---
 
-## Task 3: ConfidenceMeter restyle + MuteToggle
+## Task 3: MuteToggle
 
 **Files:**
-- Modify: `frontend/src/components/game/ConfidenceMeter.tsx`
 - Create: `frontend/src/components/game/MuteToggle.tsx`
-- Test: `frontend/src/components/game/__tests__/ConfidenceMeter.test.tsx` (exists — keep passing), `frontend/src/components/game/__tests__/MuteToggle.test.tsx`
+- Test: `frontend/src/components/game/__tests__/MuteToggle.test.tsx`
 
 **Interfaces:**
-- `ConfidenceMeter({ confidence, word, face }: { confidence: number; word: string; face: boolean })` — unchanged props/behavior, candy styling; still shows "center your face" when `!face` and `NN%` + word when `face`.
 - Produces: `MuteToggle({ muted, onToggle }: { muted: boolean; onToggle: () => void })` — speaker icon button; `aria-label` = `muted ? "Unmute" : "Mute"`.
 
-- [ ] **Step 1: Confirm the existing ConfidenceMeter test still defines behavior**
+Note: there is NO ConfidenceMeter in this redesign (removed by user request). `ConfidenceMeter.tsx` and its test are deleted in Task 8.
 
-Read `frontend/src/components/game/__tests__/ConfidenceMeter.test.tsx`. It asserts: `face={false}` shows `/center your face/i`; `confidence={0.83} word="blue" face={true}` shows `/blue/` and `/83%/`. The restyle MUST keep these passing (same text, new styles).
-
-- [ ] **Step 2: Write the failing MuteToggle test**
+- [ ] **Step 1: Write the failing MuteToggle test**
 
 Create `frontend/src/components/game/__tests__/MuteToggle.test.tsx`:
 ```tsx
@@ -306,12 +303,12 @@ describe("MuteToggle", () => {
 });
 ```
 
-- [ ] **Step 3: Run it to verify it fails**
+- [ ] **Step 2: Run it to verify it fails**
 
 Run: `npm run test -- src/components/game/__tests__/MuteToggle.test.tsx`
 Expected: FAIL — module not found.
 
-- [ ] **Step 4: Implement MuteToggle**
+- [ ] **Step 3: Implement MuteToggle**
 
 Create `frontend/src/components/game/MuteToggle.tsx`:
 ```tsx
@@ -328,43 +325,16 @@ export function MuteToggle({ muted, onToggle }: { muted: boolean; onToggle: () =
 }
 ```
 
-- [ ] **Step 5: Restyle ConfidenceMeter (keep props + text)**
+- [ ] **Step 4: Run it to verify it passes**
 
-Replace `frontend/src/components/game/ConfidenceMeter.tsx` with:
-```tsx
-export function ConfidenceMeter({ confidence, word, face }: { confidence: number; word: string; face: boolean }) {
-  if (!face) {
-    return (
-      <div style={{ position: "absolute", left: 18, right: 18, bottom: 16, textAlign: "center", color: "#fff", background: "rgba(0,0,0,0.45)", borderRadius: 12, padding: "8px 12px" }}>
-        Center your face in frame…
-      </div>
-    );
-  }
-  const pct = Math.round(confidence * 100);
-  return (
-    <div style={{ position: "absolute", left: 18, right: 18, bottom: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5, color: "#fff", fontSize: 14 }}>
-        <span>reading: <span style={{ fontWeight: 600 }}>{word || "…"}</span></span>
-        <span style={{ fontWeight: 700, color: "var(--candy-lime)" }}>{pct}%</span>
-      </div>
-      <div style={{ height: 14, borderRadius: 999, background: "rgba(255,255,255,0.25)", overflow: "hidden", border: "2px solid rgba(255,255,255,0.6)" }}>
-        <div style={{ width: `${pct}%`, height: "100%", background: "var(--candy-lime)", borderRadius: 999, transition: "width 0.15s linear" }} />
-      </div>
-    </div>
-  );
-}
-```
+Run: `npm run test -- src/components/game/__tests__/MuteToggle.test.tsx`
+Expected: PASS (2 passed)
 
-- [ ] **Step 6: Run both tests**
-
-Run: `npm run test -- src/components/game/__tests__/MuteToggle.test.tsx src/components/game/__tests__/ConfidenceMeter.test.tsx`
-Expected: PASS (MuteToggle 2, ConfidenceMeter 2).
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add frontend/src/components/game/ConfidenceMeter.tsx frontend/src/components/game/MuteToggle.tsx frontend/src/components/game/__tests__/MuteToggle.test.tsx
-git commit -m "feat(game): candy ConfidenceMeter + MuteToggle"
+git add frontend/src/components/game/MuteToggle.tsx frontend/src/components/game/__tests__/MuteToggle.test.tsx
+git commit -m "feat(game): MuteToggle control"
 ```
 
 ---
@@ -769,9 +739,9 @@ export function CorridorScene({
 }) {
   return (
     <div style={{ position: "relative", width: "100%", height: 460, borderRadius: 24, overflow: "hidden", background: "#20222e" }}>
-      <video ref={videoRef} autoPlay playsInline muted style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: 0.85 }} />
+      <video ref={videoRef} autoPlay playsInline muted style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: 1 }} />
       <svg viewBox="0 0 680 460" width="100%" height="100%" style={{ position: "absolute", inset: 0 }} role="img" aria-label="corridor">
-        <polygon points="0,460 680,460 430,250 250,250" fill="rgba(40,43,58,0.55)" />
+        <polygon points="0,460 680,460 430,250 250,250" fill="rgba(40,43,58,0.25)" />
         <line x1="12" y1="452" x2="250" y2="255" stroke="#ffffff" strokeWidth="16" />
         <line x1="668" y1="452" x2="430" y2="255" stroke="#ffffff" strokeWidth="16" />
         <line x1="12" y1="452" x2="250" y2="255" stroke="var(--rail-red)" strokeWidth="16" strokeDasharray="22 22" />
@@ -929,7 +899,6 @@ import { CorridorScene } from "../../components/game/CorridorScene";
 import { TimerPill } from "../../components/game/TimerPill";
 import { ScoreBadge } from "../../components/game/ScoreBadge";
 import { ProgressDots } from "../../components/game/ProgressDots";
-import { ConfidenceMeter } from "../../components/game/ConfidenceMeter";
 import { MuteToggle } from "../../components/game/MuteToggle";
 import { Confetti } from "../../components/game/Confetti";
 import { ResultScreen } from "../../components/game/ResultScreen";
@@ -972,7 +941,6 @@ export default function GamePage() {
         <ProgressDots total={state.sentence.words.length} roundIndex={state.roundIndex} />
         <MuteToggle muted={muted} onToggle={toggleMuted} />
         {state.status === "playing" && <TimerPill secondsLeft={loop.secondsLeft} />}
-        {state.status === "playing" && <ConfidenceMeter confidence={loop.meter.confidence} word={loop.meter.word} face={loop.meter.face} />}
         {state.status === "won" && <ResultScreen onNewSentence={() => dispatch({ type: "NEW_SENTENCE" })} />}
         {error && (
           <div style={{ position: "absolute", left: 18, right: 18, top: "50%", transform: "translateY(-50%)", textAlign: "center", color: "#fff", background: "rgba(0,0,0,0.6)", borderRadius: 12, padding: 16 }}>
@@ -987,12 +955,12 @@ export default function GamePage() {
 }
 ```
 
-- [ ] **Step 3: Delete now-unused components**
+- [ ] **Step 3: Delete now-unused components (incl. the removed ConfidenceMeter)**
 
 ```bash
-git rm frontend/src/components/game/Hud.tsx frontend/src/components/game/RoundFeedback.tsx frontend/src/components/game/WordPrompt.tsx
+git rm frontend/src/components/game/Hud.tsx frontend/src/components/game/RoundFeedback.tsx frontend/src/components/game/WordPrompt.tsx frontend/src/components/game/ConfidenceMeter.tsx frontend/src/components/game/__tests__/ConfidenceMeter.test.tsx
 ```
-If any test imports them, delete that test too (search first: `grep -rl "Hud\|RoundFeedback\|WordPrompt" frontend/src`).
+Then confirm nothing else imports them: `grep -rl "Hud\|RoundFeedback\|WordPrompt\|ConfidenceMeter" frontend/src` should return no source files (delete any stragglers).
 
 - [ ] **Step 4: Run the full frontend suite + typecheck**
 
@@ -1019,7 +987,7 @@ Frontend (from `frontend/`): `npm run dev`
 
 - [ ] **Step 2: Play and verify**
 
-Open `http://localhost:3000/game`. Verify: corridor + striped rails render over the live camera; the front wall shows the current word in the bubble font; the countdown pill ticks and auto-starts each word (no GO button); mouthing a word fills the confidence meter and, on pass, fires confetti + advances the progress dot + shows the next word; letting the timer hit 0 resets and retries the same word (no game-over); clearing all six shows the win screen + confetti; the mute toggle silences cues.
+Open `http://localhost:3000/game`. Verify: the user's face shows **clearly** (full-opacity camera) with the corridor + striped rails over it; there is **no confidence bar**; the front wall shows the current word in the bubble font; the countdown pill ticks and auto-starts each word (no GO button); mouthing a recognized word fires confetti + advances the progress dot + shows the next word; letting the timer hit 0 resets and retries the same word (no game-over); clearing all six shows the win screen + confetti; the mute toggle silences cues.
 
 - [ ] **Step 3: (Optional polish) animate the wall advance**
 
@@ -1036,5 +1004,6 @@ git add -A && git commit -m "fix(game): polish corridor advance + verification f
 ## Self-Review Notes
 
 - **Spec coverage:** corridor + rails + wall-boxes + bubble word (Task 6); auto-countdown + live scoring + timeout-retry, no GO (Task 5, wired Task 8); confetti on pass/win (Task 7, Task 8); score / 6-word progress (Task 2); sound + mute (Tasks 3–4, 8); candy theme + Fredoka (Task 1); camera-error retry preserved (Task 8); reduced-motion (Task 1 CSS, Task 9 polish). Backend untouched (Global Constraints).
-- **Type consistency:** `ServerMessage` reused from `useGameSocket`; `useRoundLoop` params/returns match the page wiring; `ConfidenceMeter`/`ResultScreen` keep their existing prop shapes and visible text so existing tests stay green; `ProgressDots` `data-state` values (`passed`/`current`/`upcoming`) consistent between component and test.
+- **Type consistency:** `ServerMessage` reused from `useGameSocket`; `useRoundLoop` params/returns match the page wiring (the page uses `loop.secondsLeft`; `loop.meter` is intentionally unused now that the meter is removed); `ResultScreen` keeps its existing prop + "New sentence" button text; `ProgressDots` `data-state` values (`passed`/`current`/`upcoming`) consistent between component and test.
+- **Confidence bar removed (user request):** no `ConfidenceMeter` on the play screen; `ConfidenceMeter.tsx` + its test deleted in Task 8. Camera shows the face clearly (video opacity 1, light corridor tint).
 - **No placeholders:** every component and hook has complete code; the only optional items (Task 9 motion polish, audio binaries) are explicitly optional and the game is fully playable without them.
