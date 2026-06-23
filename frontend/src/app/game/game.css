@@ -14,3 +14,4 @@
 .timer-low { animation: timer-pulse 0.6s ease-in-out infinite; }
 @keyframes timer-pulse { 0%,100% { transform: translateX(-50%) scale(1);} 50% { transform: translateX(-50%) scale(1.08);} }
 @media (prefers-reduced-motion: reduce) { .timer-low { animation: none; } }
+@media (prefers-reduced-motion: reduce) { svg [data-car], svg [data-wall] rect { transition: none !important; } }
