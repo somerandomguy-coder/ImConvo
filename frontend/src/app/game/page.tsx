@@ -6,8 +6,7 @@ import { useGameSocket, type ServerMessage } from "../../hooks/useGameSocket";
 import { useRoundLoop } from "../../hooks/useRoundLoop";
 import { useSound } from "../../hooks/useSound";
 import { FaceStage } from "../../components/game/FaceStage";
-import { PlankCarousel } from "../../components/game/PlankCarousel";
-import { DiagonalRails } from "../../components/game/DiagonalRails";
+import { WordPrompt } from "../../components/game/WordPrompt";
 import { TimerPill } from "../../components/game/TimerPill";
 import { ScoreBadge } from "../../components/game/ScoreBadge";
 import { ProgressDots } from "../../components/game/ProgressDots";
@@ -44,14 +43,13 @@ export default function GamePage() {
   return (
     <div style={{ width: "100%", margin: 0, padding: 0 }}>
       <FaceStage videoRef={videoRef}>
-        <DiagonalRails />
         <div style={{ position: "absolute", top: 18, left: 18, zIndex: 2 }}><MuteToggle muted={muted} onToggle={toggleMuted} /></div>
         <div style={{ position: "absolute", top: 18, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, zIndex: 2 }}>
           {state.status === "playing" && <TimerPill secondsLeft={loop.secondsLeft} />}
           <ProgressDots total={total} roundIndex={Math.min(state.roundIndex, total - 1)} />
         </div>
         {state.status === "playing" && (
-          <PlankCarousel words={state.sentence.words} slots={state.sentence.slots} roundIndex={state.roundIndex} />
+          <WordPrompt slot={state.sentence.slots[state.roundIndex]} word={state.sentence.words[state.roundIndex]} />
         )}
         <div style={{ position: "absolute", bottom: 18, left: 18, zIndex: 3 }}><ScoreBadge score={state.score} /></div>
         {state.status === "playing" && (
