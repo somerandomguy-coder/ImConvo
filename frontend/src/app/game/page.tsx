@@ -6,8 +6,8 @@ import { useGameSocket, type ServerMessage } from "../../hooks/useGameSocket";
 import { useRoundLoop } from "../../hooks/useRoundLoop";
 import { useSound } from "../../hooks/useSound";
 import { FaceStage } from "../../components/game/FaceStage";
-import { WordPrompt } from "../../components/game/WordPrompt";
-import { RailMinimap } from "../../components/game/RailMinimap";
+import { PlankCarousel } from "../../components/game/PlankCarousel";
+import { DiagonalRails } from "../../components/game/DiagonalRails";
 import { TimerPill } from "../../components/game/TimerPill";
 import { ScoreBadge } from "../../components/game/ScoreBadge";
 import { ProgressDots } from "../../components/game/ProgressDots";
@@ -42,26 +42,26 @@ export default function GamePage() {
 
   const total = state.sentence.words.length;
   return (
-    <div style={{ maxWidth: 960, margin: "0 auto", padding: 16 }}>
+    <div style={{ width: "100%", margin: 0, padding: 0 }}>
       <FaceStage videoRef={videoRef}>
-        <div style={{ position: "absolute", top: 14, left: 14, zIndex: 2 }}><MuteToggle muted={muted} onToggle={toggleMuted} /></div>
-        <div style={{ position: "absolute", top: 16, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, zIndex: 2 }}>
+        <DiagonalRails />
+        <div style={{ position: "absolute", top: 18, left: 18, zIndex: 2 }}><MuteToggle muted={muted} onToggle={toggleMuted} /></div>
+        <div style={{ position: "absolute", top: 18, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, zIndex: 2 }}>
           {state.status === "playing" && <TimerPill secondsLeft={loop.secondsLeft} />}
           <ProgressDots total={total} roundIndex={Math.min(state.roundIndex, total - 1)} />
         </div>
-        <RailMinimap total={total} roundIndex={state.status === "won" ? total : state.roundIndex} />
         {state.status === "playing" && (
-          <WordPrompt slot={state.sentence.slots[state.roundIndex]} word={state.sentence.words[state.roundIndex]} />
+          <PlankCarousel words={state.sentence.words} slots={state.sentence.slots} roundIndex={state.roundIndex} />
         )}
-        <div style={{ position: "absolute", bottom: 18, left: 18, zIndex: 2 }}><ScoreBadge score={state.score} /></div>
+        <div style={{ position: "absolute", bottom: 18, left: 18, zIndex: 3 }}><ScoreBadge score={state.score} /></div>
         {state.status === "playing" && (
-          <div style={{ position: "absolute", bottom: 18, right: 18, width: 240, zIndex: 2 }}>
+          <div style={{ position: "absolute", bottom: 18, right: 18, width: 260, zIndex: 3 }}>
             <ConfidenceMeter confidence={loop.meter.confidence} word={loop.meter.word} face={loop.meter.face} />
           </div>
         )}
         {state.status === "won" && <ResultScreen onNewSentence={() => dispatch({ type: "NEW_SENTENCE" })} />}
         {error && (
-          <div style={{ position: "absolute", left: 18, right: 18, top: "50%", transform: "translateY(-50%)", textAlign: "center", color: "#fff", background: "rgba(0,0,0,0.6)", borderRadius: 12, padding: 16, zIndex: 3 }}>
+          <div style={{ position: "absolute", left: 18, right: 18, top: "50%", transform: "translateY(-50%)", textAlign: "center", color: "#fff", background: "rgba(0,0,0,0.6)", borderRadius: 12, padding: 16, zIndex: 4 }}>
             <p style={{ margin: "0 0 10px" }}>{error}</p>
             <button onClick={retry} style={{ background: "var(--candy-magenta)", color: "#fff", border: "3px solid #fff", borderRadius: 999, padding: "8px 20px", fontWeight: 600, cursor: "pointer" }}>Enable camera</button>
           </div>
