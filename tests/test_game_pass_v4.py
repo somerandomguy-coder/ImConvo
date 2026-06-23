@@ -56,3 +56,50 @@ def test_no_pass_when_wrong_word(monkeypatch):
                 saw_pass = True
                 break
         assert not saw_pass
+
+def test_streak_resets_on_no_match(monkeypatch):
+    import api._game as game_mod
+    import time as _time
+    client = TestClient(app)
+    monkeypatch.setattr(game_mod, "preprocess_frames", lambda f: np.zeros((1,1), dtype=np.float32))
+    state = {"top": "blue"}
+
+    def patched(f, s, **k):
+        return {
+            "top_word": state["top"],
+            "confidence": 0.99,
+            "topk": [{"word": state["top"], "confidence": 0.99}],
+            "ranked_words": [state["top"], "green", "red", "white"],
+        }
+    monkeypatch.setattr(game_mod, "score_window", patched)
+
+    with client.websocket_connect("/ws/game") as ws:
+        ws.send_json({"type": "start_round", "slot_index": 1, "target": "blue"})
+        _time.sleep((game_mod.PASS_WARMUP_MS / 1000.0) + 0.05)
+
+        # one matching window after warmup -> streak should be 1, no pass yet
+        for _ in range(game_mod.SCORE_EVERY_N_FRAMES):
+            ws.send_json({"type": "frame", "data": _jpeg()})
+        msg = ws.receive_json()
+        assert msg["type"] == "progress", msg
+
+        # now switch to wrong word -> streak resets to 0
+        state["top"] = "green"
+        for _ in range(game_mod.SCORE_EVERY_N_FRAMES):
+            ws.send_json({"type": "frame", "data": _jpeg()})
+        msg = ws.receive_json()
+        assert msg["type"] == "progress", msg
+
+        # back to right word -> need 2 fresh consecutive matches before pass
+        state["top"] = "blue"
+        for _ in range(game_mod.SCORE_EVERY_N_FRAMES):
+            ws.send_json({"type": "frame", "data": _jpeg()})
+        msg = ws.receive_json()
+        # streak == 1 again, still progress
+        assert msg["type"] == "progress", msg
+
+        for _ in range(game_mod.SCORE_EVERY_N_FRAMES):
+            ws.send_json({"type": "frame", "data": _jpeg()})
+        msg = ws.receive_json()
+        # streak hits 2 -> pass
+        assert msg["type"] == "result" and msg["pass"] is True
