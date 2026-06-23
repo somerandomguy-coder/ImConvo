@@ -39,8 +39,11 @@ STRICT_PASS_TOPK = {LETTER_SLOT_INDEX: 3}
 STRICT_DEFAULT_TOPK = 1
 RELAXED_PASS_TOPK = {LETTER_SLOT_INDEX: 5}
 RELAXED_DEFAULT_TOPK = 2
+RELAXED2_PASS_TOPK = {LETTER_SLOT_INDEX: 8}
+RELAXED2_DEFAULT_TOPK = 3
 PASS_CONFIDENCE_THRESHOLD = 0.6
 RELAX_AFTER_ATTEMPTS = 3
+RELAX2_AFTER_ATTEMPTS = 5
 # Sustained-signal gate (unchanged): warmup + streak.
 PASS_WARMUP_MS = 1200
 PASS_STREAK_REQUIRED = 2
@@ -67,14 +70,19 @@ def evaluate_pass(
     Default (attempts < RELAX_AFTER_ATTEMPTS) — strict:
       - Letters slot: target in top-3 (no confidence gate).
       - Other slots:  top-1 == target AND confidence >= PASS_CONFIDENCE_THRESHOLD.
-    After RELAX_AFTER_ATTEMPTS (>=3) prior failures — relaxed:
+    After RELAX_AFTER_ATTEMPTS prior failures — relaxed tier 1:
       - Letters slot: target in top-5.
       - Other slots:  target in top-2.
+    After RELAX2_AFTER_ATTEMPTS prior failures — relaxed tier 2:
+      - Letters slot: target in top-8.
+      - Other slots:  target in top-3.
     """
     if not ranked_words:
         return False
-    relaxed = attempts >= RELAX_AFTER_ATTEMPTS
-    if relaxed:
+    if attempts >= RELAX2_AFTER_ATTEMPTS:
+        k = RELAXED2_PASS_TOPK.get(slot_index, RELAXED2_DEFAULT_TOPK)
+        return target in ranked_words[:k]
+    if attempts >= RELAX_AFTER_ATTEMPTS:
         k = RELAXED_PASS_TOPK.get(slot_index, RELAXED_DEFAULT_TOPK)
         return target in ranked_words[:k]
     if slot_index == LETTER_SLOT_INDEX:

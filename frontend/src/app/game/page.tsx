@@ -13,6 +13,7 @@ import { ScoreBadge } from "../../components/game/ScoreBadge";
 import { ProgressDots } from "../../components/game/ProgressDots";
 import { MuteToggle } from "../../components/game/MuteToggle";
 import { Confetti } from "../../components/game/Confetti";
+import { ConfidenceMeter } from "../../components/game/ConfidenceMeter";
 import { ResultScreen } from "../../components/game/ResultScreen";
 
 export default function GamePage() {
@@ -27,6 +28,7 @@ export default function GamePage() {
     active: state.status === "playing" && connected && !error,
     roundIndex: state.roundIndex,
     target: state.sentence.words[state.roundIndex],
+    roundSeconds: 4,
     startRound, endRound, sendFrame, grabFrame,
     onPass,
     onTimeout: () => play("timeout"),
@@ -52,6 +54,11 @@ export default function GamePage() {
           <WordPrompt slot={state.sentence.slots[state.roundIndex]} word={state.sentence.words[state.roundIndex]} />
         )}
         <div style={{ position: "absolute", bottom: 18, left: 18, zIndex: 2 }}><ScoreBadge score={state.score} /></div>
+        {state.status === "playing" && (
+          <div style={{ position: "absolute", bottom: 18, right: 18, width: 240, zIndex: 2 }}>
+            <ConfidenceMeter confidence={loop.meter.confidence} word={loop.meter.word} face={loop.meter.face} />
+          </div>
+        )}
         {state.status === "won" && <ResultScreen onNewSentence={() => dispatch({ type: "NEW_SENTENCE" })} />}
         {error && (
           <div style={{ position: "absolute", left: 18, right: 18, top: "50%", transform: "translateY(-50%)", textAlign: "center", color: "#fff", background: "rgba(0,0,0,0.6)", borderRadius: 12, padding: 16, zIndex: 3 }}>

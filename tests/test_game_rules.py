@@ -3,6 +3,7 @@ from api._game import (
     LETTER_SLOT_INDEX,
     PASS_CONFIDENCE_THRESHOLD,
     RELAX_AFTER_ATTEMPTS,
+    RELAX2_AFTER_ATTEMPTS,
     slot_candidate_indices,
     evaluate_pass,
 )
@@ -48,3 +49,15 @@ def test_pass_relaxes_after_three_failed_attempts():
     ranked_letters = ["c", "e", "b", "a", "d", "f"]
     assert evaluate_pass(3, "d", ranked_letters, attempts=0) is False
     assert evaluate_pass(3, "d", ranked_letters, attempts=RELAX_AFTER_ATTEMPTS) is True
+
+
+def test_pass_relaxes_again_after_five_failed_attempts():
+    high = PASS_CONFIDENCE_THRESHOLD + 0.1
+    # rank-3 fails under tier-1 (top-2) but passes under tier-2 (top-3)
+    ranked = ["green", "red", "blue", "white"]
+    assert evaluate_pass(1, "blue", ranked, high, attempts=RELAX_AFTER_ATTEMPTS) is False
+    assert evaluate_pass(1, "blue", ranked, high, attempts=RELAX2_AFTER_ATTEMPTS) is True
+    # letters: rank-7 passes only after tier-2 (top-8)
+    ranked_letters = list("cebadfghi")  # 9 letters; "h" at index 6 = rank 7
+    assert evaluate_pass(3, "h", ranked_letters, attempts=RELAX_AFTER_ATTEMPTS) is False
+    assert evaluate_pass(3, "h", ranked_letters, attempts=RELAX2_AFTER_ATTEMPTS) is True
