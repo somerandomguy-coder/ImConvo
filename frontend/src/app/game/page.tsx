@@ -27,7 +27,7 @@ export default function GamePage() {
     active: state.status === "playing" && connected && !error,
     roundIndex: state.roundIndex,
     target: state.sentence.words[state.roundIndex],
-    roundSeconds: 4,
+    roundSeconds: 2,
     startRound, endRound, sendFrame, grabFrame,
     onPass,
     onTimeout: () => play("timeout"),

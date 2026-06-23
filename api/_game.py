@@ -44,8 +44,8 @@ RELAXED2_DEFAULT_TOPK = 3
 PASS_CONFIDENCE_THRESHOLD = 0.6
 RELAX_AFTER_ATTEMPTS = 3
 RELAX2_AFTER_ATTEMPTS = 5
-# Sustained-signal gate (unchanged): warmup + streak.
-PASS_WARMUP_MS = 1200
+# Sustained-signal gate: warmup + streak.
+PASS_WARMUP_MS = 700
 PASS_STREAK_REQUIRED = 2
 
 
