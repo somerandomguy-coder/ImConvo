@@ -29,14 +29,19 @@ BUFFER_FRAMES = 25
 TARGET_FRAMES = 25
 SCORE_EVERY_N_FRAMES = 3
 LETTER_SLOT_INDEX = 3
-# Easy difficulty: a round passes when the target is within the slot's top-k
-# model guesses (no confidence gate). Letters have 25 candidates, so they get a
-# wider top-k than the 4–10 candidate slots.
-DEFAULT_PASS_TOPK = 2
-PASS_TOPK = {LETTER_SLOT_INDEX: 5}
-# Pass rule: mouth must be visible for at least PASS_WARMUP_MS before
-# the streak counter is reset. A pass requires PASS_STREAK_REQUIRED
-# consecutive match frames (only after warmup).
+# Strict pass rule by default: non-letter slots require top-1 == target AND
+# confidence >= PASS_CONFIDENCE_THRESHOLD; the 25-option letter slot requires
+# target in top-3 (a single best-guess on 25 candidates is too hard).
+# After RELAX_AFTER_ATTEMPTS failed attempts on the SAME word, relax: top-2 for
+# normal slots, top-5 for letters (no confidence gate). This gives a fair-but-
+# winnable progression — the player can't just stare blankly and pass.
+STRICT_PASS_TOPK = {LETTER_SLOT_INDEX: 3}
+STRICT_DEFAULT_TOPK = 1
+RELAXED_PASS_TOPK = {LETTER_SLOT_INDEX: 5}
+RELAXED_DEFAULT_TOPK = 2
+PASS_CONFIDENCE_THRESHOLD = 0.6
+RELAX_AFTER_ATTEMPTS = 3
+# Sustained-signal gate (unchanged): warmup + streak.
 PASS_WARMUP_MS = 1200
 PASS_STREAK_REQUIRED = 2
 
@@ -51,15 +56,34 @@ def evaluate_pass(
     target: str,
     ranked_words: list[str],
     confidence: float | None = None,
+    attempts: int = 0,
 ) -> bool:
-    """Decide whether a scored window passes the round (easy difficulty).
+    """Decide whether a scored window passes the round.
 
     ranked_words: the slot's candidate words sorted by probability desc.
-    A round passes if `target` is within the slot's top-k guesses.
-    `confidence` is accepted for call-site compatibility but unused.
+    confidence: probability of ranked_words[0] (used by the strict rule).
+    attempts: number of prior failed attempts on this same target.
+
+    Default (attempts < RELAX_AFTER_ATTEMPTS) — strict:
+      - Letters slot: target in top-3 (no confidence gate).
+      - Other slots:  top-1 == target AND confidence >= PASS_CONFIDENCE_THRESHOLD.
+    After RELAX_AFTER_ATTEMPTS (>=3) prior failures — relaxed:
+      - Letters slot: target in top-5.
+      - Other slots:  target in top-2.
     """
-    k = PASS_TOPK.get(slot_index, DEFAULT_PASS_TOPK)
-    return target in ranked_words[:k]
+    if not ranked_words:
+        return False
+    relaxed = attempts >= RELAX_AFTER_ATTEMPTS
+    if relaxed:
+        k = RELAXED_PASS_TOPK.get(slot_index, RELAXED_DEFAULT_TOPK)
+        return target in ranked_words[:k]
+    if slot_index == LETTER_SLOT_INDEX:
+        return target in ranked_words[: STRICT_PASS_TOPK[LETTER_SLOT_INDEX]]
+    return (
+        ranked_words[0] == target
+        and (confidence is not None)
+        and confidence >= PASS_CONFIDENCE_THRESHOLD
+    )
 
 
 def decode_jpeg(b64: str) -> np.ndarray:

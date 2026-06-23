@@ -492,6 +492,8 @@ async def ws_game(ws: WebSocket) -> None:
     round_started_at: float | None = None
     streak = 0
     last_match_word: str | None = None
+    attempts_target: str | None = None
+    attempts_count = 0
     try:
         while True:
             msg = await ws.receive_json()
@@ -508,6 +510,9 @@ async def ws_game(ws: WebSocket) -> None:
                 round_started_at = time.monotonic()
                 streak = 0
                 last_match_word = None
+                if target != attempts_target:
+                    attempts_target = target
+                    attempts_count = 0
                 if not (0 <= slot_index < len(SLOT_VOCABS)) or target not in SLOT_VOCABS[slot_index]:
                     await ws.send_json({"type": "error", "message": "invalid slot or target"})
                     slot_index, target = None, None
@@ -515,6 +520,8 @@ async def ws_game(ws: WebSocket) -> None:
             elif kind == "end_round":
                 if slot_index is not None and target is not None and buffer:
                     await _score_and_emit(ws, list(buffer), slot_index, target, force_result=True)
+                if target is not None and target == attempts_target:
+                    attempts_count += 1
                 slot_index, target = None, None
                 round_started_at, streak, last_match_word = None, 0, None
 
@@ -534,7 +541,13 @@ async def ws_game(ws: WebSocket) -> None:
                         last_match_word = None
                         await ws.send_json({"type": "progress", "word": "", "confidence": 0.0, "topk": [], "face": False})
                     else:
-                        match = game.evaluate_pass(slot_index, target, scored["ranked_words"], scored["confidence"])
+                        match = game.evaluate_pass(
+                            slot_index,
+                            target,
+                            scored["ranked_words"],
+                            scored["confidence"],
+                            attempts=attempts_count,
+                        )
                         if match and last_match_word == target:
                             streak += 1
                         elif match:
@@ -558,6 +571,7 @@ async def ws_game(ws: WebSocket) -> None:
                             })
                             slot_index, target = None, None
                             round_started_at, streak, last_match_word = None, 0, None
+                            attempts_target, attempts_count = None, 0
                         else:
                             await ws.send_json({
                                 "type": "progress",

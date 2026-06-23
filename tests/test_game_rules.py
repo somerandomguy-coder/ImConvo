@@ -1,6 +1,8 @@
 from api._game import (
     SLOT_NAMES,
     LETTER_SLOT_INDEX,
+    PASS_CONFIDENCE_THRESHOLD,
+    RELAX_AFTER_ATTEMPTS,
     slot_candidate_indices,
     evaluate_pass,
 )
@@ -19,15 +21,30 @@ def test_slot_candidate_indices_color():
     assert len(slot_candidate_indices(color_idx)) == 4
 
 
-def test_pass_normal_slot_allows_top2():
-    # easy mode: non-letter slots pass if the target is within the top-2 guesses
-    assert evaluate_pass(1, "blue", ["blue", "green", "red", "white"], 0.9) is True   # top-1
-    assert evaluate_pass(1, "blue", ["green", "blue", "red", "white"], 0.4) is True   # top-2
-    assert evaluate_pass(1, "blue", ["green", "red", "blue", "white"], 0.9) is False  # rank 3
+def test_pass_strict_normal_slot_requires_top1_and_threshold():
+    # default (attempts=0): top-1 == target AND confidence >= threshold
+    high = PASS_CONFIDENCE_THRESHOLD + 0.1
+    low = PASS_CONFIDENCE_THRESHOLD - 0.1
+    assert evaluate_pass(1, "blue", ["blue", "green", "red", "white"], high) is True
+    assert evaluate_pass(1, "blue", ["blue", "green", "red", "white"], low) is False   # confidence too low
+    assert evaluate_pass(1, "blue", ["green", "blue", "red", "white"], high) is False  # not top-1
 
 
-def test_pass_letter_slot_allows_top5():
+def test_pass_strict_letter_slot_allows_top3_no_confidence_gate():
     ranked = ["c", "e", "b", "a", "d", "f"]
     assert LETTER_SLOT_INDEX == 3
-    assert evaluate_pass(3, "d", ranked) is True   # d is rank 5 (within top-5)
-    assert evaluate_pass(3, "f", ranked) is False  # f is rank 6
+    # letters: in top-3, confidence ignored
+    assert evaluate_pass(3, "b", ranked, 0.05) is True   # b is rank 3
+    assert evaluate_pass(3, "a", ranked, 0.99) is False  # a is rank 4 (out of strict top-3)
+
+
+def test_pass_relaxes_after_three_failed_attempts():
+    high = PASS_CONFIDENCE_THRESHOLD + 0.1
+    # before relaxation: rank-2 still fails
+    assert evaluate_pass(1, "blue", ["green", "blue", "red", "white"], high, attempts=RELAX_AFTER_ATTEMPTS - 1) is False
+    # at relaxation threshold (3 prior fails): rank-2 passes
+    assert evaluate_pass(1, "blue", ["green", "blue", "red", "white"], high, attempts=RELAX_AFTER_ATTEMPTS) is True
+    # letters: rank-5 passes only after relaxation
+    ranked_letters = ["c", "e", "b", "a", "d", "f"]
+    assert evaluate_pass(3, "d", ranked_letters, attempts=0) is False
+    assert evaluate_pass(3, "d", ranked_letters, attempts=RELAX_AFTER_ATTEMPTS) is True
