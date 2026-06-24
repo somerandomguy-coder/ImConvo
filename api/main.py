@@ -25,11 +25,6 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-import api._game as game
-from experiments.isolated_word_level.common import SLOT_VOCABS
-
-logger = logging.getLogger("imconvo.game")
-
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
@@ -42,6 +37,11 @@ if _env_file.exists():
         if _line and not _line.startswith("#") and "=" in _line:
             _k, _v = _line.split("=", 1)
             os.environ.setdefault(_k.strip(), _v.strip())
+
+import api._game as game
+from experiments.isolated_word_level.common import SLOT_VOCABS
+
+logger = logging.getLogger("imconvo.game")
 
 from src import (
     DEFAULT_BEAM_WIDTH,
