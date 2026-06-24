@@ -45,7 +45,7 @@ PASS_CONFIDENCE_THRESHOLD = 0.6
 RELAX_AFTER_ATTEMPTS = 3
 RELAX2_AFTER_ATTEMPTS = 5
 # Sustained-signal gate: warmup + streak.
-PASS_WARMUP_MS = 700
+PASS_WARMUP_MS = 1000
 PASS_STREAK_REQUIRED = 2
 
 
@@ -92,6 +92,31 @@ def evaluate_pass(
         and (confidence is not None)
         and confidence >= PASS_CONFIDENCE_THRESHOLD
     )
+
+
+def last_lip_bbox_normalized(bgr_frames: list[np.ndarray]) -> dict | None:
+    """Run MediaPipe on the last buffered frame and return a normalized lip bbox.
+
+    Returns dict with keys x/y/w/h in [0, 1] of the captured frame, or None
+    when no face/lips are detected. Used by the UI to draw a live tracking
+    overlay on the webcam feed — does NOT affect scoring.
+    """
+    if not bgr_frames:
+        return None
+    frame = bgr_frames[-1]
+    bbox = _mediapipe_lip_bbox(frame)
+    if bbox is None:
+        return None
+    h, w = frame.shape[:2]
+    x0, y0, x1, y1 = bbox
+    if w <= 0 or h <= 0:
+        return None
+    return {
+        "x": x0 / w,
+        "y": y0 / h,
+        "w": (x1 - x0) / w,
+        "h": (y1 - y0) / h,
+    }
 
 
 def decode_jpeg(b64: str) -> np.ndarray:

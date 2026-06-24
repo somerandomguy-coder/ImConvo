@@ -579,6 +579,7 @@ async def ws_game(ws: WebSocket) -> None:
                                 "confidence": scored["confidence"],
                                 "topk": scored["topk"],
                                 "face": True,
+                                "bbox": scored.get("bbox"),
                             })
     except WebSocketDisconnect:
         return
@@ -589,7 +590,9 @@ async def _score(frames, slot_index: int):
         arr = await run_in_threadpool(game.preprocess_frames, frames)
         if arr is None:
             return None
-        return await run_in_threadpool(game.score_window, arr, slot_index)
+        scored = await run_in_threadpool(game.score_window, arr, slot_index)
+        scored["bbox"] = await run_in_threadpool(game.last_lip_bbox_normalized, frames)
+        return scored
     except Exception as exc:
         logger.exception("scoring failed")
         return None

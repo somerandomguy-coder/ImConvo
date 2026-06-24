@@ -7,6 +7,7 @@ import { useRoundLoop } from "../../hooks/useRoundLoop";
 import { useSound } from "../../hooks/useSound";
 import { FaceStage } from "../../components/game/FaceStage";
 import { WordPrompt } from "../../components/game/WordPrompt";
+import { MouthBox } from "../../components/game/MouthBox";
 import { TimerPill } from "../../components/game/TimerPill";
 import { ScoreBadge } from "../../components/game/ScoreBadge";
 import { ProgressDots } from "../../components/game/ProgressDots";
@@ -27,7 +28,7 @@ export default function GamePage() {
     active: state.status === "playing" && connected && !error,
     roundIndex: state.roundIndex,
     target: state.sentence.words[state.roundIndex],
-    roundSeconds: 2,
+    roundSeconds: 3,
     startRound, endRound, sendFrame, grabFrame,
     onPass,
     onTimeout: () => play("timeout"),
@@ -43,6 +44,9 @@ export default function GamePage() {
   return (
     <div style={{ width: "100%", margin: 0, padding: 0 }}>
       <FaceStage videoRef={videoRef}>
+        {state.status === "playing" && (
+          <MouthBox bbox={loop.meter.bbox} label={loop.meter.face ? `MOUTH ${Math.round(loop.meter.confidence * 100)}%` : undefined} />
+        )}
         <div style={{ position: "absolute", top: 18, left: 18, zIndex: 2 }}><MuteToggle muted={muted} onToggle={toggleMuted} /></div>
         <div style={{ position: "absolute", top: 18, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, zIndex: 2 }}>
           {state.status === "playing" && <TimerPill secondsLeft={loop.secondsLeft} />}

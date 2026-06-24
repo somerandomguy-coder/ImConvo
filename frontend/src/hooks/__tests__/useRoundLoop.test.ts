@@ -56,7 +56,7 @@ describe("useRoundLoop", () => {
     const p = makeParams();
     const { result } = renderHook(() => useRoundLoop(p));
     act(() => result.current.handleMessage({ type: "progress", word: "blue", confidence: 0.5, topk: [], face: true }));
-    expect(result.current.meter).toEqual({ word: "blue", confidence: 0.5, face: true });
+    expect(result.current.meter).toEqual({ word: "blue", confidence: 0.5, face: true, bbox: null });
   });
 
   it("stops capturing when active goes false", () => {

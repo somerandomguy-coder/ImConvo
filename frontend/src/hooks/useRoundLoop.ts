@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ServerMessage } from "./useGameSocket";
+import type { ServerMessage, LipBBox } from "./useGameSocket";
 
 type RoundLoopParams = {
   active: boolean;
@@ -18,7 +18,7 @@ type RoundLoopParams = {
 export function useRoundLoop(params: RoundLoopParams) {
   const { active, roundIndex, target, roundSeconds = 6 } = params;
   const [secondsLeft, setSecondsLeft] = useState(roundSeconds);
-  const [meter, setMeter] = useState({ word: "", confidence: 0, face: true });
+  const [meter, setMeter] = useState<{ word: string; confidence: number; face: boolean; bbox: LipBBox | null }>({ word: "", confidence: 0, face: true, bbox: null });
 
   const ref = useRef(params);
   ref.current = params;
@@ -37,7 +37,7 @@ export function useRoundLoop(params: RoundLoopParams) {
     stop();
     rearming.current = false;
     passedRef.current = false;
-    setMeter({ word: "", confidence: 0, face: true });
+    setMeter({ word: "", confidence: 0, face: true, bbox: null });
     setSecondsLeft(p.roundSeconds ?? 6);
     p.startRound(p.roundIndex, p.target);
     captureRef.current = setInterval(() => {
@@ -67,7 +67,7 @@ export function useRoundLoop(params: RoundLoopParams) {
 
   const handleMessage = useCallback((msg: ServerMessage) => {
     if (msg.type === "progress") {
-      setMeter({ word: msg.word, confidence: msg.confidence, face: msg.face });
+      setMeter({ word: msg.word, confidence: msg.confidence, face: msg.face, bbox: msg.bbox ?? null });
     } else if (msg.type === "result" && msg.pass && !passedRef.current) {
       passedRef.current = true;
       stop();

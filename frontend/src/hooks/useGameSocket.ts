@@ -4,8 +4,10 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
 const FRAME_BUFFER_LIMIT = 1_000_000; // bytes; drop frames when the socket is backed up
 
+export type LipBBox = { x: number; y: number; w: number; h: number };
+
 export type ServerMessage =
-  | { type: "progress"; word: string; confidence: number; topk: { word: string; confidence: number }[]; face: boolean }
+  | { type: "progress"; word: string; confidence: number; topk: { word: string; confidence: number }[]; face: boolean; bbox?: LipBBox | null }
   | { type: "result"; pass: boolean; word: string; confidence: number; target: string }
   | { type: "error"; message: string }
   | { type: "pong" };
