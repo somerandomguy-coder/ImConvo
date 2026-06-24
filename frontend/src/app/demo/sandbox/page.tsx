@@ -914,13 +914,14 @@ export default function SandboxGamePage() {
     setErrorMsg(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 320, height: 240, frameRate: 25 },
+        video: {
+          width: { ideal: 320 },
+          height: { ideal: 240 },
+          frameRate: { ideal: 25 }
+        },
         audio: false
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
       setWebcamActive(true);
       setAiOfflineFallback(false);
       showToast("A.I. Camera Tracker connected.", "success");
@@ -930,6 +931,13 @@ export default function SandboxGamePage() {
       showToast("Camera access rejected. AI simulation fallback activated.", "info");
     }
   };
+
+  // Assign webcam stream to video element when it mounts
+  useEffect(() => {
+    if (webcamActive && streamRef.current && videoRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+    }
+  }, [webcamActive]);
 
   // STOP Webcam A.I. stream
   const stopWebcam = () => {
