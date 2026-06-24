@@ -7,9 +7,11 @@ from __future__ import annotations
 import argparse
 import glob
 import os
+import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -136,22 +138,58 @@ def _preprocess_video(
     video_path: str,
     file_name: str,
 ) -> tuple[np.ndarray, dict[str, Any], str | None, float, list[str]]:
-    video_meta = get_video_metadata(video_path)
-    if video_meta["frame_count"] is None or video_meta["width"] is None:
-        raise HTTPException(status_code=400, detail="Uploaded file is not a readable video stream.")
+    # Detect if the video file needs transcoding (e.g. webm format or if OpenCV can't read metadata)
+    needs_transcode = False
+    suffix = Path(file_name).suffix.lower()
+    if suffix in {".webm", ".ogg", ".mov", ".avi", ".mpeg", ".mpg"}:
+        needs_transcode = True
+    else:
+        meta = get_video_metadata(video_path)
+        if meta["frame_count"] is None or meta["width"] is None:
+            needs_transcode = True
 
-    preview_url = build_preview(video_path, file_name)
+    transcoded_path = None
+    if needs_transcode:
+        temp_dir = tempfile.gettempdir()
+        temp_mp4 = os.path.join(temp_dir, f"transcoded_{uuid.uuid4().hex}.mp4")
+        try:
+            r = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", video_path,
+                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                 "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+                 "-an", # audio is not needed for lip reading
+                 temp_mp4],
+                capture_output=True, text=True, check=False, timeout=30
+            )
+            if r.returncode == 0 and os.path.exists(temp_mp4):
+                video_path = temp_mp4
+                transcoded_path = temp_mp4
+        except Exception as e:
+            print(f"[API] Transcoding failed: {e}")
 
-    t0 = time.perf_counter()
-    frames = extract_lip_frames(video_path)
-    preprocess_ms = (time.perf_counter() - t0) * 1000
+    try:
+        video_meta = get_video_metadata(video_path)
+        if video_meta["frame_count"] is None or video_meta["width"] is None:
+            raise HTTPException(status_code=400, detail="Uploaded file is not a readable video stream.")
 
-    if frames is None:
-        raise HTTPException(status_code=400, detail="Could not detect mouth/face region.")
-    if not isinstance(frames, np.ndarray) or frames.ndim != 3:
-        raise HTTPException(status_code=400, detail="Invalid preprocessed frame tensor.")
+        preview_url = build_preview(video_path, file_name)
 
-    return frames, video_meta, preview_url, preprocess_ms, encode_sample_frames(frames)
+        t0 = time.perf_counter()
+        frames = extract_lip_frames(video_path)
+        preprocess_ms = (time.perf_counter() - t0) * 1000
+
+        if frames is None:
+            raise HTTPException(status_code=400, detail="Could not detect mouth/face region.")
+        if not isinstance(frames, np.ndarray) or frames.ndim != 3:
+            raise HTTPException(status_code=400, detail="Invalid preprocessed frame tensor.")
+
+        return frames, video_meta, preview_url, preprocess_ms, encode_sample_frames(frames)
+    finally:
+        if transcoded_path and os.path.exists(transcoded_path):
+            try:
+                os.remove(transcoded_path)
+            except OSError:
+                pass
 
 
 def _run_ctc_inference(
