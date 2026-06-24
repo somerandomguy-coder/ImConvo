@@ -45,7 +45,7 @@ export default function GamePage() {
     <div style={{ width: "100%", margin: 0, padding: 0 }}>
       <FaceStage videoRef={videoRef}>
         {state.status === "playing" && (
-          <MouthBox bbox={loop.meter.bbox} label={loop.meter.face ? `MOUTH ${Math.round(loop.meter.confidence * 100)}%` : undefined} />
+          <MouthBox bbox={loop.meter.bbox} videoRef={videoRef} label={loop.meter.face ? `MOUTH ${Math.round(loop.meter.confidence * 100)}%` : undefined} />
         )}
         <div style={{ position: "absolute", top: 18, left: 18, zIndex: 2 }}><MuteToggle muted={muted} onToggle={toggleMuted} /></div>
         <div style={{ position: "absolute", top: 18, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, zIndex: 2 }}>

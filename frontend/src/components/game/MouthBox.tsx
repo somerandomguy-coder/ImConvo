@@ -1,20 +1,78 @@
+import { useEffect, useState } from "react";
+import type { RefObject } from "react";
 import type { LipBBox } from "../../hooks/useGameSocket";
 
-export function MouthBox({ bbox, label }: { bbox: LipBBox | null; label?: string }) {
-  if (!bbox) return null;
-  const left = `${Math.max(0, Math.min(1, bbox.x)) * 100}%`;
-  const top = `${Math.max(0, Math.min(1, bbox.y)) * 100}%`;
-  const width = `${Math.max(0, Math.min(1, bbox.w)) * 100}%`;
-  const height = `${Math.max(0, Math.min(1, bbox.h)) * 100}%`;
+type Rect = { left: number; top: number; width: number; height: number };
+
+function coverRect(bbox: LipBBox, videoW: number, videoH: number, boxW: number, boxH: number): Rect {
+  const natAspect = videoW / videoH;
+  const containerAspect = boxW / boxH;
+  let displayW: number, displayH: number, offsetX: number, offsetY: number;
+  if (natAspect > containerAspect) {
+    displayH = boxH;
+    displayW = boxH * natAspect;
+    offsetX = (displayW - boxW) / 2;
+    offsetY = 0;
+  } else {
+    displayW = boxW;
+    displayH = boxW / natAspect;
+    offsetX = 0;
+    offsetY = (displayH - boxH) / 2;
+  }
+  return {
+    left: bbox.x * displayW - offsetX,
+    top: bbox.y * displayH - offsetY,
+    width: bbox.w * displayW,
+    height: bbox.h * displayH,
+  };
+}
+
+export function MouthBox({
+  bbox,
+  label,
+  videoRef,
+}: {
+  bbox: LipBBox | null;
+  label?: string;
+  videoRef: RefObject<HTMLVideoElement | null>;
+}) {
+  const [rect, setRect] = useState<Rect | null>(null);
+
+  useEffect(() => {
+    if (!bbox) {
+      setRect(null);
+      return;
+    }
+    const v = videoRef.current;
+    const container = v?.parentElement;
+    if (!v || !container || !v.videoWidth || !v.videoHeight) {
+      setRect(null);
+      return;
+    }
+    setRect(coverRect(bbox, v.videoWidth, v.videoHeight, container.clientWidth, container.clientHeight));
+  }, [bbox, videoRef]);
+
+  useEffect(() => {
+    const onResize = () => {
+      const v = videoRef.current;
+      const container = v?.parentElement;
+      if (!bbox || !v || !container || !v.videoWidth || !v.videoHeight) return;
+      setRect(coverRect(bbox, v.videoWidth, v.videoHeight, container.clientWidth, container.clientHeight));
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [bbox, videoRef]);
+
+  if (!rect) return null;
   return (
     <div
       data-testid="mouth-box"
       style={{
         position: "absolute",
-        left,
-        top,
-        width,
-        height,
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
         border: "3px solid #5DE0A6",
         borderRadius: 4,
         boxShadow: "0 0 0 1px rgba(0,0,0,0.4), 0 0 12px rgba(93,224,166,0.45)",
@@ -23,50 +81,10 @@ export function MouthBox({ bbox, label }: { bbox: LipBBox | null; label?: string
         zIndex: 2,
       }}
     >
-      <span
-        style={{
-          position: "absolute",
-          left: -3,
-          top: -3,
-          width: 10,
-          height: 10,
-          borderTop: "3px solid #FFE25A",
-          borderLeft: "3px solid #FFE25A",
-        }}
-      />
-      <span
-        style={{
-          position: "absolute",
-          right: -3,
-          top: -3,
-          width: 10,
-          height: 10,
-          borderTop: "3px solid #FFE25A",
-          borderRight: "3px solid #FFE25A",
-        }}
-      />
-      <span
-        style={{
-          position: "absolute",
-          left: -3,
-          bottom: -3,
-          width: 10,
-          height: 10,
-          borderBottom: "3px solid #FFE25A",
-          borderLeft: "3px solid #FFE25A",
-        }}
-      />
-      <span
-        style={{
-          position: "absolute",
-          right: -3,
-          bottom: -3,
-          width: 10,
-          height: 10,
-          borderBottom: "3px solid #FFE25A",
-          borderRight: "3px solid #FFE25A",
-        }}
-      />
+      <span style={{ position: "absolute", left: -3, top: -3, width: 10, height: 10, borderTop: "3px solid #FFE25A", borderLeft: "3px solid #FFE25A" }} />
+      <span style={{ position: "absolute", right: -3, top: -3, width: 10, height: 10, borderTop: "3px solid #FFE25A", borderRight: "3px solid #FFE25A" }} />
+      <span style={{ position: "absolute", left: -3, bottom: -3, width: 10, height: 10, borderBottom: "3px solid #FFE25A", borderLeft: "3px solid #FFE25A" }} />
+      <span style={{ position: "absolute", right: -3, bottom: -3, width: 10, height: 10, borderBottom: "3px solid #FFE25A", borderRight: "3px solid #FFE25A" }} />
       {label && (
         <div
           style={{
