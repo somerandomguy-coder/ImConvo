@@ -997,11 +997,25 @@ export default function SandboxGamePage() {
     }
 
     try {
-      const options = { mimeType: "video/webm;codecs=vp9" };
+      let selectedMimeType = "";
+      const mimeTypes = [
+        "video/webm;codecs=vp9",
+        "video/webm;codecs=vp8",
+        "video/webm",
+        "video/mp4;codecs=h264",
+        "video/mp4",
+      ];
+      for (const mime of mimeTypes) {
+        if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(mime)) {
+          selectedMimeType = mime;
+          break;
+        }
+      }
+
       let recorder: MediaRecorder;
-      try {
-        recorder = new MediaRecorder(streamRef.current, options);
-      } catch {
+      if (selectedMimeType) {
+        recorder = new MediaRecorder(streamRef.current, { mimeType: selectedMimeType });
+      } else {
         recorder = new MediaRecorder(streamRef.current);
       }
 
