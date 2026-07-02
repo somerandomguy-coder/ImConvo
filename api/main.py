@@ -8,6 +8,10 @@ import argparse
 import glob
 import os
 import sys
+
+if "IMCONVO_USE_GPU" not in os.environ:
+    os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+
 import tempfile
 import time
 import asyncio

@@ -33,7 +33,12 @@ function write(key: string, value: number): void {
   if (typeof localStorage !== "undefined") localStorage.setItem(key, String(value));
 }
 
-export function initGameState(sentence: Sentence = generateSentence()): GameState {
+export const DEFAULT_SENTENCE: Sentence = {
+  words: ["place", "blue", "at", "a", "one", "soon"],
+  slots: ["command", "color", "preposition", "letter", "digit", "adverb"],
+};
+
+export function initGameState(sentence: Sentence = DEFAULT_SENTENCE): GameState {
   return {
     sentence,
     roundIndex: 0,

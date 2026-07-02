@@ -18,6 +18,9 @@ import { ResultScreen } from "../../components/game/ResultScreen";
 
 export default function GamePage() {
   const [state, dispatch] = useGame();
+  useEffect(() => {
+    dispatch({ type: "NEW_SENTENCE" });
+  }, [dispatch]);
   const { videoRef, error, grabFrame, retry } = useWebcam();
   const { muted, toggleMuted, play } = useSound();
   const [confettiKey, setConfettiKey] = useState(0);

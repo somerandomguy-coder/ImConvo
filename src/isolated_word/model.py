@@ -39,17 +39,17 @@ class LipReadingIsolatedWordClassifier(LipReadingCTC):
         self.num_word_classes = int(num_word_classes)
         self.classifier_hidden_dim = int(classifier_hidden_dim)
 
-        self.pool = layers.GlobalAveragePooling1D(name="time_pooling")
+        self.pool = layers.GlobalAveragePooling1D(name="temporal_gap")
         self.fc_hidden = layers.Dense(
             self.classifier_hidden_dim,
             activation="relu",
-            name="classifier_hidden",
+            name="isolated_classifier_dense",
         )
-        self.fc_dropout = layers.Dropout(self.head_dropout, name="classifier_dropout")
+        self.fc_dropout = layers.Dropout(self.head_dropout, name="isolated_classifier_dropout")
         self.fc_out = layers.Dense(
             self.num_word_classes,
             activation=None,
-            name="classifier_logits",
+            name="isolated_word_logits",
         )
 
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
