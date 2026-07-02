@@ -31,9 +31,9 @@ else
     echo "Bucket gs://${BUCKET_NAME} already exists."
 fi
 
-# 2. Upload checkpoints structure
-echo "📤 2/5 Uploading checkpoints weights to bucket..."
-gcloud --quiet storage cp -r checkpoints/* gs://${BUCKET_NAME}/
+# 2. Sync checkpoints structure (only copies new/changed files)
+echo "📤 2/5 Syncing checkpoints weights to bucket..."
+gcloud --quiet storage rsync checkpoints gs://${BUCKET_NAME} --recursive
 
 # 3. Create Artifact Registry Docker repository in Sydney (ignore error if exists)
 echo "📦 3/5 Checking Artifact Registry repository..."
