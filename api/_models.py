@@ -41,7 +41,15 @@ def load_ctc_model(model_path: str) -> LipReadingCTC:
         _active_ctc_path = model_path
         return _CTC_CACHE[model_path]
     if not os.path.exists(model_path):
-        raise HTTPException(status_code=400, detail=f"Model not found: {model_path}")
+        fallback = str(DEFAULT_CTC_PATH.resolve())
+        if os.path.exists(fallback):
+            print(f"[API] Warning: Model '{model_path}' not found on disk. Falling back to default: '{fallback}'")
+            model_path = fallback
+            if model_path in _CTC_CACHE:
+                _active_ctc_path = model_path
+                return _CTC_CACHE[model_path]
+        else:
+            raise HTTPException(status_code=400, detail=f"Model not found: {model_path}")
 
     def _infer(path: str) -> tuple[str, str]:
         stem = Path(path).stem.lower()
