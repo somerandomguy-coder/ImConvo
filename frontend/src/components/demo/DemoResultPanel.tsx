@@ -81,7 +81,7 @@ export default function DemoResultPanel({
             controls
             onLoadedMetadata={(e) => { e.currentTarget.muted = false; }}
             className="aspect-video w-full rounded-lg bg-black object-contain"
-            src={`${process.env.NEXT_PUBLIC_DEMO_API_URL || "http://localhost:8001"}${result.preview_url}`}
+            src={`${process.env.NEXT_PUBLIC_DEMO_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"}${result.preview_url}`}
           />
         </section>
       )}
