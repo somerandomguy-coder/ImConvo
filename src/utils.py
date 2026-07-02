@@ -42,7 +42,7 @@ _FACE_LANDMARKER_MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/"
     "face_landmarker/face_landmarker/float16/1/face_landmarker.task"
 )
-_FACE_LANDMARKER_MODEL_PATH = Path(__file__).resolve().parent.parent / "reports" / "face_landmarker.task"
+_FACE_LANDMARKER_MODEL_PATH = Path(__file__).resolve().parent / "assets" / "face_landmarker.task"
 
 _FACE_LANDMARKER: "mp.tasks.vision.FaceLandmarker | None" = None
 

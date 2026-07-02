@@ -45,7 +45,7 @@ from src import (
     decode_logits,
 )
 from src.llm_postprocessor import LLMPostprocessor
-from experiments.word_level_grid.common import SLOT_NAMES, decode_word_indices
+from src.word_level.common import SLOT_NAMES, decode_word_indices
 
 from api._utils import (
     PREVIEW_DIR,

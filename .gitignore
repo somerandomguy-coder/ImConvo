@@ -225,3 +225,4 @@ temp_reports/
 preview_cache/
 SESSION_MEMORY.md
 my_lipreading_dataset/
+checkpoints/

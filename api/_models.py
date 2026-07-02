@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from src import FRONTEND_MODELS, MODEL_VARIANTS, NUM_CHARS, LipReadingCTC, build_lipreading_ctc
 from src.model import LegacyLipReadingCTC
 from src.llm_postprocessor import LLMPostprocessor
-from experiments.word_level_grid.model import LipReadingWordClassifier, build_lipreading_word_classifier
+from src.word_level.model import LipReadingWordClassifier, build_lipreading_word_classifier
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 _default_name = os.environ.get("IMCONVO_DEFAULT_MODEL") or "checkpoints/best_ctc_model_conformer_lite_gap_proj.keras"
