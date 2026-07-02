@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
     libgles2 \
+    libegl1 \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
