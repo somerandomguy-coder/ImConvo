@@ -178,8 +178,12 @@ def _preprocess_video(
             if r.returncode == 0 and os.path.exists(temp_mp4):
                 video_path = temp_mp4
                 transcoded_path = temp_mp4
+            else:
+                print(f"[API] Transcoding failed with exit code {r.returncode}.")
+                if r.stderr:
+                    print(f"[API] Transcode error output: {r.stderr}")
         except Exception as e:
-            print(f"[API] Transcoding failed: {e}")
+            print(f"[API] Transcoding raised exception: {e}")
 
     try:
         video_meta = get_video_metadata(video_path)
