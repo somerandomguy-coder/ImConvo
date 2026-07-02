@@ -1,0 +1,17 @@
+.game-root {
+  --candy-magenta: #FF3D9A;
+  --candy-periwinkle: #7C8CF8;
+  --candy-periwinkle-dark: #4b4fb5;
+  --candy-lime: #5DE0A6;
+  --candy-sun: #FFE25A;
+  --candy-wood: #C9A06A;
+  --candy-cream: #F4E3C6;
+  --rail-red: #E24B4A;
+  font-family: var(--font-fredoka), system-ui, sans-serif;
+}
+.bubble { -webkit-text-stroke: 3px #fff; font-weight: 700; }
+.bubble-thin { -webkit-text-stroke: 1.5px var(--candy-periwinkle-dark); font-weight: 700; }
+.timer-low { animation: timer-pulse 0.6s ease-in-out infinite; }
+@keyframes timer-pulse { 0%,100% { transform: translateX(-50%) scale(1);} 50% { transform: translateX(-50%) scale(1.08);} }
+@media (prefers-reduced-motion: reduce) { .timer-low { animation: none; } }
+@media (prefers-reduced-motion: reduce) { svg [data-car], svg [data-wall] rect { transition: none !important; } }

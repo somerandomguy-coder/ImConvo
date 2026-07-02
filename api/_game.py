@@ -1,0 +1,243 @@
+"""Live per-word game: vocab/slot maps, pass-rule, preprocessing, scoring."""
+from __future__ import annotations
+
+import base64
+import os
+import threading
+from pathlib import Path
+
+import cv2
+import h5py
+import numpy as np
+
+from src.isolated_word.common import IDX_TO_WORD, NUM_WORD_CLASSES, SLOT_VOCABS, WORD_TO_IDX
+from src.isolated_word.model import build_lipreading_isolated_word_classifier
+from src.isolated_word.temporal_slicer import slice_and_pad_word_clip
+from src.utils import FRAME_HEIGHT, FRAME_WIDTH, _mediapipe_lip_bbox
+
+SLOT_NAMES: tuple[str, ...] = (
+    "command",
+    "color",
+    "preposition",
+    "letter",
+    "digit",
+    "adverb",
+)
+
+# Tunables — single source of truth.
+BUFFER_FRAMES = 25
+TARGET_FRAMES = 25
+SCORE_EVERY_N_FRAMES = 3
+LETTER_SLOT_INDEX = 3
+# Strict pass rule by default: non-letter slots require top-1 == target AND
+# confidence >= PASS_CONFIDENCE_THRESHOLD; the 25-option letter slot requires
+# target in top-3 (a single best-guess on 25 candidates is too hard).
+# After RELAX_AFTER_ATTEMPTS failed attempts on the SAME word, relax: top-2 for
+# normal slots, top-5 for letters (no confidence gate). This gives a fair-but-
+# winnable progression — the player can't just stare blankly and pass.
+STRICT_PASS_TOPK = {LETTER_SLOT_INDEX: 3}
+STRICT_DEFAULT_TOPK = 1
+RELAXED_PASS_TOPK = {LETTER_SLOT_INDEX: 5}
+RELAXED_DEFAULT_TOPK = 2
+RELAXED2_PASS_TOPK = {LETTER_SLOT_INDEX: 8}
+RELAXED2_DEFAULT_TOPK = 3
+PASS_CONFIDENCE_THRESHOLD = 0.6
+RELAX_AFTER_ATTEMPTS = 3
+RELAX2_AFTER_ATTEMPTS = 5
+# Sustained-signal gate: warmup + streak.
+PASS_WARMUP_MS = 1000
+PASS_STREAK_REQUIRED = 2
+
+
+def slot_candidate_indices(slot_index: int) -> list[int]:
+    """Return the FLAT_VOCAB class indices for a given GRID slot."""
+    return [WORD_TO_IDX[w] for w in SLOT_VOCABS[slot_index]]
+
+
+def evaluate_pass(
+    slot_index: int,
+    target: str,
+    ranked_words: list[str],
+    confidence: float | None = None,
+    attempts: int = 0,
+) -> bool:
+    """Decide whether a scored window passes the round.
+
+    ranked_words: the slot's candidate words sorted by probability desc.
+    confidence: probability of ranked_words[0] (used by the strict rule).
+    attempts: number of prior failed attempts on this same target.
+
+    Default (attempts < RELAX_AFTER_ATTEMPTS) — strict:
+      - Letters slot: target in top-3 (no confidence gate).
+      - Other slots:  top-1 == target AND confidence >= PASS_CONFIDENCE_THRESHOLD.
+    After RELAX_AFTER_ATTEMPTS prior failures — relaxed tier 1:
+      - Letters slot: target in top-5.
+      - Other slots:  target in top-2.
+    After RELAX2_AFTER_ATTEMPTS prior failures — relaxed tier 2:
+      - Letters slot: target in top-8.
+      - Other slots:  target in top-3.
+    """
+    if not ranked_words:
+        return False
+    if attempts >= RELAX2_AFTER_ATTEMPTS:
+        k = RELAXED2_PASS_TOPK.get(slot_index, RELAXED2_DEFAULT_TOPK)
+        return target in ranked_words[:k]
+    if attempts >= RELAX_AFTER_ATTEMPTS:
+        k = RELAXED_PASS_TOPK.get(slot_index, RELAXED_DEFAULT_TOPK)
+        return target in ranked_words[:k]
+    if slot_index == LETTER_SLOT_INDEX:
+        return target in ranked_words[: STRICT_PASS_TOPK[LETTER_SLOT_INDEX]]
+    return (
+        ranked_words[0] == target
+        and (confidence is not None)
+        and confidence >= PASS_CONFIDENCE_THRESHOLD
+    )
+
+
+def last_lip_bbox_normalized(bgr_frames: list[np.ndarray]) -> dict | None:
+    """Run MediaPipe on the last buffered frame and return a normalized lip bbox.
+
+    Returns dict with keys x/y/w/h in [0, 1] of the captured frame, or None
+    when no face/lips are detected. Used by the UI to draw a live tracking
+    overlay on the webcam feed — does NOT affect scoring.
+    """
+    if not bgr_frames:
+        return None
+    frame = bgr_frames[-1]
+    bbox = _mediapipe_lip_bbox(frame)
+    if bbox is None:
+        return None
+    h, w = frame.shape[:2]
+    x0, y0, x1, y1 = bbox
+    if w <= 0 or h <= 0:
+        return None
+    return {
+        "x": x0 / w,
+        "y": y0 / h,
+        "w": (x1 - x0) / w,
+        "h": (y1 - y0) / h,
+    }
+
+
+def decode_jpeg(b64: str) -> np.ndarray:
+    """Decode a base64 JPEG string into a BGR uint8 frame."""
+    try:
+        raw = base64.b64decode(b64, validate=True)
+        arr = np.frombuffer(raw, dtype=np.uint8)
+        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(f"Could not decode JPEG: {exc}") from exc
+    if img is None:
+        raise ValueError("Could not decode JPEG: empty image")
+    return img
+
+
+def preprocess_frames(bgr_frames: list[np.ndarray]) -> np.ndarray | None:
+    """Lip-crop, grayscale, resize and pad frames to the model input tensor."""
+    crops: list[np.ndarray] = []
+    for frame in bgr_frames:
+        bbox = _mediapipe_lip_bbox(frame)
+        if bbox is None:
+            continue
+        x0, y0, x1, y1 = bbox
+        lip = frame[y0:y1, x0:x1]
+        if lip.size == 0:
+            continue
+        gray = cv2.cvtColor(lip, cv2.COLOR_BGR2GRAY)
+        resized = cv2.resize(gray, (FRAME_WIDTH, FRAME_HEIGHT))
+        crops.append(resized.astype(np.float32) / 255.0)
+
+    if not crops:
+        return None
+
+    stacked = np.stack(crops, axis=0)  # (t, H, W)
+    clip = slice_and_pad_word_clip(
+        stacked, 0, stacked.shape[0], target_frames=TARGET_FRAMES, pad_mode="repeat_last"
+    )  # (TARGET_FRAMES, H, W, 1)
+    return clip[np.newaxis, ...].astype(np.float32)
+
+
+_ROOT = Path(__file__).resolve().parent.parent
+_ISOLATED_DIR = _ROOT / "checkpoints" / "isolated_word_level"
+
+_classifier = None
+_classifier_lock = threading.Lock()
+
+
+class IsolatedWordClassifier:
+    """Lazy-loaded singleton wrapper around the isolated-word model."""
+
+    def __init__(self) -> None:
+        self.model = build_lipreading_isolated_word_classifier(
+            model_variant="conformer_lite",
+            frontend_model="flatten",
+            num_word_classes=NUM_WORD_CLASSES,
+        )
+        dummy = np.zeros((1, TARGET_FRAMES, FRAME_HEIGHT, FRAME_WIDTH, 1), dtype=np.float32)
+        _ = self.model(dummy, training=False)
+        weights_path = self._resolve_weights()
+        # The checkpoint's conformer positional embedding was saved when
+        # MAX_FRAMES was 75; the current build sizes it at MAX_FRAMES (150), so
+        # the shapes differ and Keras drops that one layer. Load everything else
+        # with skip_mismatch, then copy the trained rows into the first 75
+        # positions. Game clips never exceed that length, so this is exact.
+        self.model.load_weights(weights_path, skip_mismatch=True)
+        self._restore_pos_embed(weights_path)
+
+    def _restore_pos_embed(self, weights_path: str) -> None:
+        try:
+            with h5py.File(weights_path, "r") as f:
+                saved = f["conformer_pos_embed/vars/0"][:]
+        except (KeyError, OSError):
+            return
+        emb = self.model.conformer_pos_embed.embeddings
+        cur = emb.numpy()
+        n = min(saved.shape[0], cur.shape[0])
+        cur[:n] = saved[:n]
+        emb.assign(cur)
+
+    @staticmethod
+    def _resolve_weights() -> str:
+        env = os.environ.get("IMCONVO_ISOLATED_WEIGHTS")
+        if env:
+            return env
+        files = sorted(_ISOLATED_DIR.glob("*.weights.h5"))
+        if not files:
+            raise FileNotFoundError(f"No isolated-word weights in {_ISOLATED_DIR}")
+        return str(files[-1])
+
+    def predict_logits(self, frames: np.ndarray) -> np.ndarray:
+        return np.asarray(self.model(frames, training=False))
+
+
+def get_classifier() -> IsolatedWordClassifier:
+    global _classifier
+    if _classifier is None:
+        with _classifier_lock:
+            if _classifier is None:
+                _classifier = IsolatedWordClassifier()
+    return _classifier
+
+
+def _softmax(x: np.ndarray) -> np.ndarray:
+    x = x - np.max(x)
+    e = np.exp(x)
+    return e / np.sum(e)
+
+
+def score_window(frames: np.ndarray, slot_index: int, *, classifier=None, top_k: int = 3) -> dict:
+    clf = classifier if classifier is not None else get_classifier()
+    logits = clf.predict_logits(frames)[0]  # (51,)
+    cand = slot_candidate_indices(slot_index)
+    cand_logits = np.array([logits[i] for i in cand], dtype=np.float32)
+    probs = _softmax(cand_logits)
+    order = np.argsort(-probs)
+    ranked_words = [IDX_TO_WORD[cand[i]] for i in order]
+    ranked_probs = [float(probs[i]) for i in order]
+    topk = [{"word": w, "confidence": p} for w, p in zip(ranked_words[:top_k], ranked_probs[:top_k])]
+    return {
+        "top_word": ranked_words[0],
+        "confidence": ranked_probs[0],
+        "topk": topk,
+        "ranked_words": ranked_words,
+    }

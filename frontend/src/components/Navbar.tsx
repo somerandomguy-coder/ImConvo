@@ -16,8 +16,11 @@ export default function Navbar() {
           <Link href="/demo/inference" className="transition-colors hover:text-foreground">
             Demo
           </Link>
-          <Link href="/demo/sandbox" className="transition-colors hover:text-foreground font-medium text-accent">
+          <Link href="/demo/sandbox" className="transition-colors hover:text-foreground">
             GRID-Bot Sandbox
+          </Link>
+          <Link href="/game" className="transition-colors hover:text-foreground">
+            Word Game
           </Link>
           <a
             href="https://github.com/somerandomguy-coder/ImConvo/"

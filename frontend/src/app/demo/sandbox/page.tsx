@@ -15,24 +15,24 @@ const DIGIT_WORDS: Record<string, number> = {
 };
 
 const COLOR_MAP: Record<string, string> = {
-  blue: "#00e6ff",  // Cyber blue
-  green: "#3fb950", // Neon green
-  red: "#ff3b30",   // Cyber red
-  white: "#f8f9fa",  // Off white
+  blue: "#3b82f6",
+  green: "#22c55e",
+  red: "#ef4444",
+  white: "#ffffff",
 };
 
 const COLOR_SHADOW_MAP: Record<string, string> = {
-  blue: "#008ca1",
-  green: "#267031",
-  red: "#9e1b1b",
-  white: "#a8a9aa",
+  blue: "#1d4ed8",
+  green: "#15803d",
+  red: "#b91c1c",
+  white: "#d1d5db",
 };
 
 const COLOR_LIGHT_MAP: Record<string, string> = {
-  blue: "#80f3ff",
-  green: "#86e292",
-  red: "#ff8c85",
-  white: "#ffffff",
+  blue: "#93c5fd",
+  green: "#86efac",
+  red: "#fca5a5",
+  white: "#f9fafb",
 };
 
 // Grid definitions
@@ -333,14 +333,6 @@ export default function SandboxGamePage() {
     setShowWinModal(false);
     setPlayerInitials("");
 
-    // Load leaderboard
-    const stored = localStorage.getItem(`sandbox_leaderboard_${levelKey}`);
-    if (stored) {
-      setLeaderboard(JSON.parse(stored));
-    } else {
-      localStorage.setItem(`sandbox_leaderboard_${levelKey}`, JSON.stringify(INITIAL_LEADERBOARDS[levelKey]));
-      setLeaderboard(INITIAL_LEADERBOARDS[levelKey]);
-    }
     showToast(`Loaded blueprint: ${BLUEPRINTS[levelKey].name}`, "info");
   }, [showToast]);
 
@@ -409,28 +401,7 @@ export default function SandboxGamePage() {
     }
   }, [timerStarted, elapsedTime, showWinModal]);
 
-  // Handle Leaderboard Submit
-  const handleLeaderboardSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!playerInitials || playerInitials.length !== 3) {
-      showToast("Please enter exactly 3 letters.", "error");
-      return;
-    }
-    const newRecord: LeaderboardRecord = {
-      initials: playerInitials.toUpperCase(),
-      time: elapsedTime,
-      date: new Date().toISOString().split("T")[0]
-    };
 
-    const updated = [...leaderboard, newRecord]
-      .sort((a, b) => a.time - b.time)
-      .slice(0, 5); // Keep top 5
-
-    setLeaderboard(updated);
-    localStorage.setItem(`sandbox_leaderboard_${activeLevel}`, JSON.stringify(updated));
-    setShowWinModal(false);
-    showToast("High score saved successfully!", "success");
-  };
 
   // Preposition brush helper
   const getBrushOffsets = (prep: "at" | "by" | "in" | "with"): Array<{ dx: number; dy: number }> => {
@@ -479,8 +450,8 @@ export default function SandboxGamePage() {
     });
 
     // Particle effect burst
-    const centerPxX = item.col * 30 + 15;
-    const centerPxY = item.row * 30 + 15;
+    const centerPxX = 30 + item.col * 30 + 15;
+    const centerPxY = 20 + item.row * 30 + 15;
     const color = item.verb === "bin" ? "#ff3b30" : COLOR_MAP[item.color];
 
     for (let i = 0; i < 18; i++) {
@@ -718,26 +689,46 @@ export default function SandboxGamePage() {
     canvas.height = rect.height * dpr;
     ctx.scale(dpr, dpr);
 
-    const cellW = rect.width / COLS_COUNT;
-    const cellH = rect.height / ROWS_COUNT;
+    const padLeft = 30;
+    const padTop = 20;
+    const cellW = 30;
+    const cellH = 30;
 
     ctx.clearRect(0, 0, rect.width, rect.height);
 
     // 1. Draw Grid Cell Backgrounds & Gridlines
     for (let r = 0; r < ROWS_COUNT; r++) {
       for (let c = 0; c < COLS_COUNT; c++) {
-        const x = c * cellW;
-        const y = r * cellH;
+        const x = padLeft + c * cellW;
+        const y = padTop + r * cellH;
 
-        // Subtle dark cyber border
-        ctx.strokeStyle = "#1f2937";
+        // Subtle light border
+        ctx.strokeStyle = "#e2e8f0";
         ctx.lineWidth = 1;
         ctx.strokeRect(x, y, cellW, cellH);
 
-        // Grid coordinates text hint on hover/empty cells
-        ctx.fillStyle = "#161b22";
+        // Light background fill for cells
+        ctx.fillStyle = "#ffffff";
         ctx.fillRect(x + 1, y + 1, cellW - 2, cellH - 2);
       }
+    }
+
+    // Draw Chess-like Row Numbers (0-9) on Left and Right borders
+    ctx.fillStyle = "#64748b"; // slate-500
+    ctx.font = "bold 10px monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    for (let r = 0; r < ROWS_COUNT; r++) {
+      const y = padTop + r * cellH + cellH / 2;
+      ctx.fillText(String(r), 15, y); // Left border
+      ctx.fillText(String(r), 795, y); // Right border
+    }
+
+    // Draw Chess-like Column Letters (A-Z, skipping W) on Top and Bottom borders
+    for (let c = 0; c < COLS_COUNT; c++) {
+      const x = padLeft + c * cellW + cellW / 2;
+      ctx.fillText(COLUMNS[c], x, 10); // Top border
+      ctx.fillText(COLUMNS[c], x, 330); // Bottom border
     }
 
     // 2. Draw ghost blueprint overlay (semi-transparent holographic shapes)
@@ -745,8 +736,8 @@ export default function SandboxGamePage() {
       for (let c = 0; c < COLS_COUNT; c++) {
         const b = activeBlueprintMatrix[r][c];
         if (b.type !== "empty" && b.color) {
-          const x = c * cellW;
-          const y = r * cellH;
+          const x = padLeft + c * cellW;
+          const y = padTop + r * cellH;
           const pad = 2;
           const w = cellW - 2 * pad;
           const h = cellH - 2 * pad;
@@ -801,8 +792,8 @@ export default function SandboxGamePage() {
       for (let c = 0; c < COLS_COUNT; c++) {
         const cell = userGrid[r][c];
         if (cell.type !== "empty" && cell.color) {
-          const x = c * cellW;
-          const y = r * cellH;
+          const x = padLeft + c * cellW;
+          const y = padTop + r * cellH;
           const pad = 2;
           const w = cellW - 2 * pad;
           const h = cellH - 2 * pad;
@@ -813,7 +804,7 @@ export default function SandboxGamePage() {
             ctx.fillRect(x + pad, y + pad, w, h);
 
             // Add simple inner glow styling
-            ctx.strokeStyle = "#161b22";
+            ctx.strokeStyle = "#e2e8f0";
             ctx.lineWidth = 1;
             ctx.strokeRect(x + pad, y + pad, w, h);
           } else if (cell.type === "block") {
@@ -876,8 +867,8 @@ export default function SandboxGamePage() {
     });
 
     // 5. Draw GRID Droid Robot
-    const rx = robot.currentX * cellW + cellW / 2;
-    const ry = robot.currentY * cellH + cellH / 2;
+    const rx = padLeft + robot.currentX * cellW + cellW / 2;
+    const ry = padTop + robot.currentY * cellH + cellH / 2;
 
     ctx.save();
     ctx.translate(rx, ry);
@@ -923,13 +914,14 @@ export default function SandboxGamePage() {
     setErrorMsg(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 320, height: 240, frameRate: 25 },
+        video: {
+          width: { ideal: 320 },
+          height: { ideal: 240 },
+          frameRate: { ideal: 25 }
+        },
         audio: false
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
       setWebcamActive(true);
       setAiOfflineFallback(false);
       showToast("A.I. Camera Tracker connected.", "success");
@@ -939,6 +931,13 @@ export default function SandboxGamePage() {
       showToast("Camera access rejected. AI simulation fallback activated.", "info");
     }
   };
+
+  // Assign webcam stream to video element when it mounts
+  useEffect(() => {
+    if (webcamActive && streamRef.current && videoRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+    }
+  }, [webcamActive]);
 
   // STOP Webcam A.I. stream
   const stopWebcam = () => {
@@ -952,6 +951,16 @@ export default function SandboxGamePage() {
     setWebcamActive(false);
     setRecordingState("idle");
     setRecordingProgress(0);
+
+    if (timerStarted) {
+      setTimerStarted(false);
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+      setShowWinModal(true);
+      showToast(`GRID-Bot Sandbox session finished with ${accuracy}% match.`, "success");
+    }
   };
 
   // Toggle Webcam Camera Widget
@@ -996,11 +1005,25 @@ export default function SandboxGamePage() {
     }
 
     try {
-      const options = { mimeType: "video/webm;codecs=vp9" };
+      let selectedMimeType = "";
+      const mimeTypes = [
+        "video/webm;codecs=vp9",
+        "video/webm;codecs=vp8",
+        "video/webm",
+        "video/mp4;codecs=h264",
+        "video/mp4",
+      ];
+      for (const mime of mimeTypes) {
+        if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(mime)) {
+          selectedMimeType = mime;
+          break;
+        }
+      }
+
       let recorder: MediaRecorder;
-      try {
-        recorder = new MediaRecorder(streamRef.current, options);
-      } catch {
+      if (selectedMimeType) {
+        recorder = new MediaRecorder(streamRef.current, { mimeType: selectedMimeType });
+      } else {
         recorder = new MediaRecorder(streamRef.current);
       }
 
@@ -1013,8 +1036,10 @@ export default function SandboxGamePage() {
 
       recorder.onstop = async () => {
         setRecordingState("analyzing");
-        const blob = new Blob(recordedChunksRef.current, { type: "video/webm" });
-        const file = new File([blob], "recorded_command.webm", { type: "video/webm" });
+        const mimeType = recorder.mimeType || "video/webm";
+        const blob = new Blob(recordedChunksRef.current, { type: mimeType });
+        const extension = mimeType.includes("mp4") ? "mp4" : "webm";
+        const file = new File([blob], `recorded_command.${extension}`, { type: mimeType });
         await uploadAndInference(file);
       };
 
@@ -1106,60 +1131,61 @@ export default function SandboxGamePage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0d1117] text-[#c9d1d9] font-sans flex flex-col antialiased">
-      {/* HUD Bar */}
-      <header className="border-b border-[#21262d] bg-[#161b22] px-6 py-4 shadow-lg">
-        <div className="mx-auto max-w-6xl flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-bold tracking-wider text-[#00e6ff] flex items-center gap-2">
-              <span className="inline-block h-2 w-2 rounded-full bg-[#00e6ff] animate-ping" />
-              GRID-Bot Lip-Sync Sandbox
-            </h1>
-            <p className="text-xs text-[#8b949e]">
-              A.I. Lip-Reading Robotic Showcase Terminal
-            </p>
-          </div>
-
-          {/* Preset Blueprint Selectors */}
-          <div className="flex gap-2">
-            {(Object.keys(BLUEPRINTS) as Array<keyof typeof BLUEPRINTS>).map((key) => (
-              <button
-                key={key}
-                onClick={() => loadLevel(key)}
-                className={`rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all border ${
-                  activeLevel === key
-                    ? "bg-[#00e6ff] text-[#0d1117] border-[#00e6ff] shadow-[0_0_12px_rgba(0,230,255,0.4)]"
-                    : "bg-[#161b22] text-[#8b949e] border-[#30363d] hover:border-[#8b949e]"
-                }`}
-              >
-                {BLUEPRINTS[key].name}
-              </button>
-            ))}
-          </div>
+    <div className="flex-1 flex flex-col w-full overflow-x-hidden p-6 max-w-6xl mx-auto">
+      {/* Header section inside main layout container */}
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-4 w-full">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-accent"></span>
+            </span>
+            GRID-Bot Lip-Sync Sandbox
+          </h1>
+          <p className="text-sm text-muted">
+            A.I. Lip-Reading Robotic Showcase Terminal
+          </p>
         </div>
-      </header>
+
+        {/* Preset Blueprint Selectors */}
+        <div className="flex gap-2">
+          {(Object.keys(BLUEPRINTS) as Array<keyof typeof BLUEPRINTS>).map((key) => (
+            <button
+              key={key}
+              onClick={() => loadLevel(key)}
+              className={`rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all border ${
+                activeLevel === key
+                  ? "bg-accent text-white border-accent shadow-sm"
+                  : "bg-card text-muted border-border hover:border-muted/30 hover:text-foreground"
+              }`}
+            >
+              {BLUEPRINTS[key].name}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* Main split dashboard panel */}
-      <main className="flex-1 max-w-6xl w-full mx-auto p-6 grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6">
+      <main className="flex-1 w-full mt-6 grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6">
         {/* Left Side Sidebar Workspace */}
         <section className="space-y-6">
           {/* AI Lip-Tracker Camera Simulator */}
-          <div className="rounded-xl border border-[#21262d] bg-[#161b22] p-5 shadow-md flex flex-col">
-            <h3 className="text-xs font-bold text-[#8b949e] uppercase tracking-wider mb-3 flex items-center justify-between">
+          <div className="rounded-xl border border-border bg-card p-5 shadow-sm flex flex-col">
+            <h3 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3 flex items-center justify-between">
               A.I. Lip-Tracker Camera Feed
-              <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] ${
+              <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-mono ${
                 webcamActive
-                  ? "bg-[#3fb950]/20 text-[#3fb950] border border-[#3fb950]/30"
+                  ? "bg-accent/15 text-accent border border-accent/20"
                   : aiOfflineFallback
-                  ? "bg-yellow-500/20 text-yellow-500 border border-yellow-500/30"
-                  : "bg-red-500/20 text-red-500 border border-red-500/30"
+                  ? "bg-yellow-100 text-yellow-700 border border-yellow-200"
+                  : "bg-red-100 text-red-700 border border-red-200"
               }`}>
                 {webcamActive ? "CAMERA LIVE" : aiOfflineFallback ? "SIMULATOR ACTIVE" : "OFFLINE"}
               </span>
             </h3>
 
             {/* Simulated Tracking Feed Frame */}
-            <div className="relative aspect-[4/3] rounded-lg bg-black overflow-hidden border border-[#30363d] flex items-center justify-center">
+            <div className="relative aspect-[4/3] rounded-lg bg-black overflow-hidden border border-border flex items-center justify-center">
               {webcamActive && !aiOfflineFallback ? (
                 <video
                   ref={videoRef}
@@ -1171,43 +1197,47 @@ export default function SandboxGamePage() {
               ) : aiOfflineFallback ? (
                 <div className="text-center p-4">
                   <div className="w-12 h-12 rounded-full border-4 border-yellow-500 border-t-transparent animate-spin mx-auto mb-2" />
-                  <p className="text-xs font-mono text-yellow-500">Camera permission denied.</p>
-                  <p className="text-[10px] text-[#8b949e] mt-1">Manual Simulation Mode active.</p>
+                  <p className="text-xs font-mono text-yellow-600">Camera permission denied.</p>
+                  <p className="text-[10px] text-muted mt-1">Manual Simulation Mode active.</p>
                 </div>
               ) : (
-                <div className="text-center p-6 text-[#8b949e] font-mono text-xs">
+                <div className="text-center p-6 text-muted font-mono text-xs">
                   <p>A.I. Scan Engine Offline</p>
-                  <p className="text-[10px] mt-1">Activate camera feed to speak commands</p>
+                  <p className="text-[10px] mt-1 text-muted/80">Activate camera feed to speak commands</p>
                 </div>
               )}
 
               {/* Wireframe Scanning HUD Overlay */}
               {(webcamActive || aiOfflineFallback) && (
-                <div className="absolute inset-0 pointer-events-none border border-[#00e6ff]/30 flex flex-col justify-between p-3">
+                <div className="absolute inset-0 pointer-events-none border border-accent/30 flex flex-col justify-between p-3">
                   {/* Glowing Corners */}
                   <div className="flex justify-between w-full">
-                    <div className="w-3 h-3 border-t-2 border-l-2 border-[#00e6ff]" />
-                    <div className="w-3 h-3 border-t-2 border-r-2 border-[#00e6ff]" />
+                    <div className="w-3 h-3 border-t-2 border-l-2 border-accent" />
+                    <div className="w-3 h-3 border-t-2 border-r-2 border-accent" />
                   </div>
 
                   {/* Pulsating Dashed Mouth Outline */}
                   <div className="self-center flex flex-col items-center gap-1.5 opacity-80">
-                    <div className="w-24 h-10 border-2 border-dashed border-[#3fb950] rounded-[50%/70%_70%_30%_30%] animate-pulse" />
-                    <span className="text-[9px] font-mono tracking-widest text-[#3fb950] bg-black/60 px-1 rounded">
+                    <div className="w-24 h-10 border-2 border-dashed border-accent rounded-[50%/70%_70%_30%_30%] animate-pulse" />
+                    <span className="text-[9px] font-mono tracking-widest text-accent bg-black/60 px-1 rounded">
                       LIP TARGET LOCKED
                     </span>
                   </div>
 
                   {/* Scanning Horizontal Line */}
-                  <div className="absolute left-0 right-0 h-[1.5px] bg-[#ff3b30]/50 shadow-[0_0_8px_#ff3b30] animate-[bounce_2.5s_infinite_ease-in-out]" />
+                  <div className="absolute left-0 right-0 h-[1.5px] bg-red-500/50 shadow-[0_0_8px_rgba(239,68,68,0.5)] animate-[bounce_2.5s_infinite_ease-in-out]" />
 
                   {/* Details Overlay */}
                   <div className="flex justify-between w-full items-end">
-                    <div className="w-3 h-3 border-b-2 border-l-2 border-[#00e6ff]" />
-                    <span className="text-[8px] font-mono text-[#00e6ff] tracking-tighter bg-black/60 px-1 rounded">
-                      MODEL: Conformer-Lite_Gap_Proj
+                    <div className="w-3 h-3 border-b-2 border-l-2 border-accent" />
+                    <span className="text-[8px] font-mono text-accent tracking-tighter bg-black/60 px-1 rounded">
+                      {recordingState === "recording"
+                        ? "STATUS: RECORDING..."
+                        : recordingState === "analyzing"
+                        ? "STATUS: READING IN PROGRESS..."
+                        : "STATUS: READY"}
                     </span>
-                    <div className="w-3 h-3 border-b-2 border-r-2 border-[#00e6ff]" />
+                    <div className="w-3 h-3 border-b-2 border-r-2 border-accent" />
                   </div>
                 </div>
               )}
@@ -1220,7 +1250,7 @@ export default function SandboxGamePage() {
                 className={`flex-1 rounded-lg py-2 text-xs font-bold border transition-colors ${
                   webcamActive || aiOfflineFallback
                     ? "bg-red-500/10 text-red-500 border-red-500/30 hover:bg-red-500/20"
-                    : "bg-[#00e6ff]/10 text-[#00e6ff] border-[#00e6ff]/30 hover:bg-[#00e6ff]/20"
+                    : "bg-accent/10 text-accent border-accent/30 hover:bg-accent/20"
                 }`}
               >
                 {webcamActive || aiOfflineFallback ? "Stop Camera" : "Start Camera"}
@@ -1233,8 +1263,8 @@ export default function SandboxGamePage() {
                   recordingState === "recording"
                     ? "bg-red-600 text-white border-red-600 animate-pulse"
                     : recordingState === "analyzing"
-                    ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/30 cursor-not-allowed"
-                    : "bg-[#3fb950] text-[#0d1117] border-[#3fb950] hover:bg-[#3fb950]/90 disabled:opacity-40 disabled:cursor-not-allowed"
+                    ? "bg-yellow-50 text-yellow-700 border-yellow-200 cursor-not-allowed"
+                    : "bg-accent text-white border-accent hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed"
                 }`}
               >
                 {recordingState === "recording" ? (
@@ -1252,44 +1282,44 @@ export default function SandboxGamePage() {
           </div>
 
           {/* Rigid Vocabulary Glossary Card */}
-          <div className="rounded-xl border border-[#21262d] bg-[#161b22] p-5 shadow-md space-y-3 font-mono">
-            <h3 className="text-xs font-bold text-[#8b949e] uppercase tracking-wider border-b border-[#30363d] pb-2">
+          <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-3 font-mono">
+            <h3 className="text-xs font-semibold text-muted uppercase tracking-wider border-b border-border pb-2">
               Rigid Grammar Tokens
             </h3>
-            <p className="text-[10px] text-[#8b949e]">
+            <p className="text-[10px] text-muted">
               Input strings must follow this strict 6-token sequence:
             </p>
-            <div className="text-xs bg-[#0d1117] p-2.5 rounded border border-[#30363d] space-y-1">
-              <p className="text-[#00e6ff]">Verb → Color → Preposition → Letter → Digit → Adverb</p>
+            <div className="text-xs bg-background p-2.5 rounded border border-border space-y-1">
+              <p className="text-accent">Verb → Color → Preposition → Letter → Digit → Adverb</p>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-[10px] text-[#8b949e] pt-1">
+            <div className="grid grid-cols-2 gap-2 text-[10px] text-muted pt-1">
               <div>
-                <span className="text-[#c9d1d9] font-bold">Verb:</span> place, lay, bin
+                <span className="text-foreground font-bold">Verb:</span> place, lay, bin
               </div>
               <div>
-                <span className="text-[#c9d1d9] font-bold">Color:</span> blue, green, red, white
+                <span className="text-foreground font-bold">Color:</span> blue, green, red, white
               </div>
               <div>
-                <span className="text-[#c9d1d9] font-bold">Prep:</span> at, by, in, with
+                <span className="text-foreground font-bold">Prep:</span> at, by, in, with
               </div>
               <div>
-                <span className="text-[#c9d1d9] font-bold">Letter:</span> A to Z (no W)
+                <span className="text-foreground font-bold">Letter:</span> A to Z (no W)
               </div>
               <div>
-                <span className="text-[#c9d1d9] font-bold">Digit:</span> 0 to 9 (or words)
+                <span className="text-foreground font-bold">Digit:</span> 0 to 9 (or words)
               </div>
               <div>
-                <span className="text-[#c9d1d9] font-bold">Adverb:</span> again, now, please, soon
+                <span className="text-foreground font-bold">Adverb:</span> again, now, please, soon
               </div>
             </div>
           </div>
 
           {/* Interactive Preset Controls */}
-          <div className="rounded-xl border border-[#21262d] bg-[#161b22] p-5 shadow-md space-y-3">
-            <h3 className="text-xs font-bold text-[#8b949e] uppercase tracking-wider border-b border-[#30363d] pb-2">
+          <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-3">
+            <h3 className="text-xs font-semibold text-muted uppercase tracking-wider border-b border-border pb-2">
               Level Presets ({BLUEPRINTS[activeLevel].name})
             </h3>
-            <p className="text-[10px] text-[#8b949e]">
+            <p className="text-[10px] text-muted">
               Click a preset command below to execute immediately:
             </p>
             <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
@@ -1297,7 +1327,7 @@ export default function SandboxGamePage() {
                 <button
                   key={idx}
                   onClick={() => handlePresetClick(preset)}
-                  className="w-full text-left font-mono text-[11px] px-2.5 py-1.5 bg-[#0d1117] border border-[#30363d] hover:border-[#00e6ff] rounded text-[#8b949e] hover:text-[#00e6ff] transition-all truncate"
+                  className="w-full text-left font-mono text-[11px] px-2.5 py-1.5 bg-background border border-border hover:border-accent rounded text-muted hover:text-accent transition-all truncate"
                 >
                   &gt; {preset}
                 </button>
@@ -1305,63 +1335,36 @@ export default function SandboxGamePage() {
             </div>
           </div>
 
-          {/* Local Leaderboard Widget */}
-          <div className="rounded-xl border border-[#21262d] bg-[#161b22] p-5 shadow-md space-y-3">
-            <h3 className="text-xs font-bold text-[#8b949e] uppercase tracking-wider border-b border-[#30363d] pb-2">
-              Showcase Leaderboard
-            </h3>
-            <div className="space-y-1.5">
-              {leaderboard.length === 0 ? (
-                <p className="text-xs text-[#8b949e] italic text-center py-2">No records found.</p>
-              ) : (
-                leaderboard.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="flex justify-between items-center text-xs font-mono bg-[#0d1117] p-2 border border-[#30363d] rounded"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-[#8b949e] w-4">#{idx + 1}</span>
-                      <span className="text-[#00e6ff] font-bold">{item.initials}</span>
-                    </div>
-                    <div className="flex gap-4">
-                      <span className="text-[#3fb950] font-bold">{item.time.toFixed(1)}s</span>
-                      <span className="text-[#8b949e] text-[10px]">{item.date}</span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
         </section>
 
         {/* Right Side Main HUD Panel */}
         <section className="flex flex-col gap-6">
           {/* Status Metrics HUD Row */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="rounded-xl border border-[#21262d] bg-[#161b22] p-4 text-center">
-              <p className="text-[10px] text-[#8b949e] font-mono uppercase tracking-wider">Sync Accuracy</p>
-              <h2 className="text-2xl font-black mt-1 font-mono text-[#00e6ff]">
+            <div className="rounded-xl border border-border bg-card p-4 text-center shadow-sm">
+              <p className="text-[10px] text-muted font-mono uppercase tracking-wider">Sync Accuracy</p>
+              <h2 className="text-2xl font-black mt-1 font-mono text-accent">
                 {accuracy}%
               </h2>
             </div>
-            <div className="rounded-xl border border-[#21262d] bg-[#161b22] p-4 text-center">
-              <p className="text-[10px] text-[#8b949e] font-mono uppercase tracking-wider">Robot Position</p>
-              <h2 className="text-2xl font-black mt-1 font-mono text-[#3fb950]">
+            <div className="rounded-xl border border-border bg-card p-4 text-center shadow-sm">
+              <p className="text-[10px] text-muted font-mono uppercase tracking-wider">Robot Position</p>
+              <h2 className="text-2xl font-black mt-1 font-mono text-green-600">
                 {COLUMNS[robot.x]}, {robot.y}
               </h2>
             </div>
-            <div className="rounded-xl border border-[#21262d] bg-[#161b22] p-4 text-center">
-              <p className="text-[10px] text-[#8b949e] font-mono uppercase tracking-wider">Showcase Timer</p>
-              <h2 className="text-2xl font-black mt-1 font-mono text-[#ffaa00]">
+            <div className="rounded-xl border border-border bg-card p-4 text-center shadow-sm">
+              <p className="text-[10px] text-muted font-mono uppercase tracking-wider">Showcase Timer</p>
+              <h2 className="text-2xl font-black mt-1 font-mono text-yellow-600">
                 {Math.floor(elapsedTime / 60).toString().padStart(2, "0")}
                 :{(Math.floor(elapsedTime) % 60).toString().padStart(2, "0")}
                 .{(Math.round((elapsedTime % 1) * 10)).toString()}
               </h2>
             </div>
-            <div className="rounded-xl border border-[#21262d] bg-[#161b22] p-4 text-center">
-              <p className="text-[10px] text-[#8b949e] font-mono uppercase tracking-wider">Queue Status</p>
+            <div className="rounded-xl border border-border bg-card p-4 text-center shadow-sm">
+              <p className="text-[10px] text-muted font-mono uppercase tracking-wider">Queue Status</p>
               <h2 className={`text-xl font-black mt-1.5 font-mono uppercase ${
-                robotState === "idle" ? "text-[#8b949e]" : robotState === "moving" ? "text-[#00e6ff]" : "text-yellow-500 animate-pulse"
+                robotState === "idle" ? "text-muted" : robotState === "moving" ? "text-accent" : "text-yellow-600 animate-pulse"
               }`}>
                 {robotState}
               </h2>
@@ -1369,9 +1372,9 @@ export default function SandboxGamePage() {
           </div>
 
           {/* Interactive HTML5 Canvas Container */}
-          <div className="rounded-xl border border-[#21262d] bg-[#161b22] p-5 shadow-lg flex flex-col items-center justify-center flex-1">
+          <div className="rounded-xl border border-border bg-card p-5 shadow-sm flex flex-col items-center justify-center flex-1">
             <div className="w-full flex justify-between items-center mb-3">
-              <p className="text-xs text-[#8b949e]">
+              <p className="text-xs text-muted">
                 Blueprint target overlay is visible as transparent dashed shapes. Build on top of it.
               </p>
               <button
@@ -1383,31 +1386,31 @@ export default function SandboxGamePage() {
                   );
                   showToast("Cleared user build grid.", "info");
                 }}
-                className="text-[10px] text-red-400 hover:text-red-500 font-mono"
+                className="text-[10px] text-red-500 hover:text-red-600 font-mono"
               >
                 [Clear Grid]
               </button>
             </div>
 
-            <div className="w-full max-w-full overflow-x-auto p-1 bg-[#0d1117] rounded-lg border border-[#30363d]">
-              {/* Canvas styled 750px width, 300px height */}
-              <canvas
-                ref={canvasRef}
-                style={{ width: "750px", height: "300px" }}
-                className="block select-none"
-              />
+            <div className="w-full max-w-full overflow-x-auto p-1 bg-background rounded-lg border border-border">
+              <div className="min-w-[810px]">
+                {/* Canvas styled 810px width, 340px height */}
+                <canvas
+                  ref={canvasRef}
+                  style={{ width: "810px", height: "340px" }}
+                  className="block select-none mx-auto"
+                />
+              </div>
             </div>
-
-            {/* Labels under Canvas */}
-            <div className="flex justify-between w-[750px] max-w-full px-4 text-[10px] font-mono text-[#8b949e] mt-2 select-none">
-              <span>Columns A to Z (excluding W)</span>
-              <span>Rows 0 to 9</span>
-            </div>
+            {/* Grid system hint label */}
+            <p className="text-[10px] font-mono text-muted mt-2 select-none text-center">
+              GRID Coordinate Target System: Column A to Z (no W) · Row 0 to 9
+            </p>
           </div>
 
           {/* Pending Execution Queue visualizer */}
-          <div className="rounded-xl border border-[#21262d] bg-[#161b22] p-4 shadow-md">
-            <h4 className="text-[10px] font-bold text-[#8b949e] uppercase tracking-wider mb-2 font-mono flex justify-between">
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <h4 className="text-[10px] font-bold text-muted uppercase tracking-wider mb-2 font-mono flex justify-between">
               Execution Action Queue ({queue.length + (activeQueueItem ? 1 : 0)} pending)
               {queue.length > 0 && (
                 <button
@@ -1415,7 +1418,7 @@ export default function SandboxGamePage() {
                     setQueue([]);
                     showToast("Cleared execution queue.", "info");
                   }}
-                  className="text-red-400 hover:text-red-500 hover:underline"
+                  className="text-red-500 hover:text-red-600 hover:underline"
                 >
                   Clear Queue
                 </button>
@@ -1423,22 +1426,22 @@ export default function SandboxGamePage() {
             </h4>
             <div className="flex gap-2.5 overflow-x-auto py-1 min-h-[62px]">
               {activeQueueItem && (
-                <div className="shrink-0 font-mono text-[10px] px-3 py-2 bg-[#00e6ff]/10 border border-[#00e6ff] text-[#00e6ff] rounded flex flex-col justify-between max-w-[150px] animate-pulse">
+                <div className="shrink-0 font-mono text-[10px] px-3 py-2 bg-accent/10 border border-accent/30 text-accent rounded flex flex-col justify-between max-w-[150px] animate-pulse">
                   <span className="font-bold truncate">&gt; {activeQueueItem.verb.toUpperCase()} {activeQueueItem.color}</span>
-                  <span className="text-[9px] text-[#8b949e] mt-1">{COLUMNS[activeQueueItem.col]}{activeQueueItem.row} ({activeQueueItem.adverb})</span>
+                  <span className="text-[9px] text-muted mt-1">{COLUMNS[activeQueueItem.col]}{activeQueueItem.row} ({activeQueueItem.adverb})</span>
                 </div>
               )}
               {queue.map((item, idx) => (
                 <div
                   key={item.id}
-                  className="shrink-0 font-mono text-[10px] px-3 py-2 bg-[#0d1117] border border-[#30363d] rounded flex flex-col justify-between max-w-[150px]"
+                  className="shrink-0 font-mono text-[10px] px-3 py-2 bg-background border border-border rounded flex flex-col justify-between max-w-[150px]"
                 >
-                  <span className="text-[#c9d1d9] truncate">&gt; {item.verb} {item.color}</span>
-                  <span className="text-[9px] text-[#8b949e] mt-1">{COLUMNS[item.col]}{item.row} ({item.adverb})</span>
+                  <span className="text-foreground truncate">&gt; {item.verb} {item.color}</span>
+                  <span className="text-[9px] text-muted mt-1">{COLUMNS[item.col]}{item.row} ({item.adverb})</span>
                 </div>
               ))}
               {!activeQueueItem && queue.length === 0 && (
-                <p className="text-xs text-[#8b949e] italic self-center py-2 w-full text-center">
+                <p className="text-xs text-muted italic self-center py-2 w-full text-center">
                   Robot is idle. Submit a command below.
                 </p>
               )}
@@ -1446,24 +1449,24 @@ export default function SandboxGamePage() {
           </div>
 
           {/* Command input terminal */}
-          <div className="rounded-xl border border-[#21262d] bg-[#161b22] p-4 shadow-md">
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
             <form onSubmit={handleTextSubmit} className="flex gap-3">
-              <span className="text-[#00e6ff] font-mono text-lg self-center select-none font-bold">&gt;</span>
+              <span className="text-accent font-mono text-lg self-center select-none font-bold">&gt;</span>
               <input
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 placeholder="place blue at M 5 now | lay green with E 8 soon"
-                className="flex-1 bg-[#0d1117] border border-[#30363d] rounded-lg px-4 py-2.5 text-sm font-mono text-white placeholder-[#8b949e] outline-none focus:border-[#00e6ff]"
+                className="flex-1 bg-background border border-border rounded-lg px-4 py-2.5 text-sm font-mono text-foreground placeholder-muted outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/30"
               />
               <button
                 type="submit"
-                className="bg-[#00e6ff] text-[#0d1117] px-6 py-2.5 rounded-lg text-sm font-bold uppercase tracking-wider hover:bg-[#00e6ff]/90 transition-all font-mono"
+                className="bg-accent text-white px-6 py-2.5 rounded-lg text-sm font-bold uppercase tracking-wider hover:bg-accent-hover transition-all font-mono"
               >
                 Send
               </button>
             </form>
-            <p className="text-[9px] text-[#8b949e] mt-2 font-mono">
+            <p className="text-[9px] text-muted mt-2 font-mono">
               Tip: Type a command and press Enter, or record a video command using your camera.
             </p>
           </div>
@@ -1477,10 +1480,10 @@ export default function SandboxGamePage() {
             key={toast.id}
             className={`pointer-events-auto p-4 rounded-lg shadow-xl border font-mono text-xs flex flex-col gap-1.5 transition-all duration-300 transform translate-y-0 ${
               toast.type === "error"
-                ? "bg-red-500/10 border-red-500 text-red-400"
+                ? "bg-red-50 border border-red-200 text-red-600"
                 : toast.type === "success"
-                ? "bg-[#3fb950]/10 border-[#3fb950] text-[#3fb950]"
-                : "bg-blue-500/10 border-blue-500 text-blue-400"
+                ? "bg-green-50 border border-green-200 text-green-600"
+                : "bg-blue-50 border border-blue-200 text-blue-600"
             }`}
           >
             <p className="font-bold uppercase">
@@ -1491,51 +1494,53 @@ export default function SandboxGamePage() {
         ))}
       </div>
 
-      {/* Win Modal Initials Collector */}
+      {/* Win / Session Finished Modal */}
       {showWinModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-[#161b22] border border-[#00e6ff] rounded-xl max-w-md w-full p-6 shadow-[0_0_24px_rgba(0,230,255,0.2)] text-center space-y-4">
-            <h2 className="text-2xl font-black text-[#00e6ff] tracking-wider animate-bounce font-mono">
-              🎉 BLUEPRINT SYNC SUCCESS!
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-xl max-w-md w-full p-6 shadow-xl text-center space-y-4">
+            <h2 className="text-2xl font-black text-accent tracking-wider font-mono">
+              {accuracy === 100 ? "🎉 BLUEPRINT SYNC SUCCESS!" : "🏁 SESSION FINISHED!"}
             </h2>
-            <p className="text-sm text-[#8b949e]">
-              Congratulations! You completed the building blueprint for <span className="text-[#ffffff] font-bold">{BLUEPRINTS[activeLevel].name}</span>!
+            <p className="text-sm text-muted">
+              {accuracy === 100
+                ? `Congratulations! You fully completed the building blueprint for "${BLUEPRINTS[activeLevel].name}"!`
+                : `Session ended. You built ${accuracy}% of the blueprint for "${BLUEPRINTS[activeLevel].name}".`}
             </p>
-            <div className="p-4 bg-[#0d1117] rounded-lg border border-[#30363d] inline-block">
-              <p className="text-xs text-[#8b949e] font-mono">Completion Time</p>
-              <h3 className="text-3xl font-black text-[#3fb950] font-mono">{elapsedTime.toFixed(1)}s</h3>
+            <div className="flex justify-center gap-4">
+              <div className="p-4 bg-background rounded-lg border border-border inline-block min-w-[120px]">
+                <p className="text-xs text-muted font-mono">Sync Accuracy</p>
+                <h3 className="text-xl font-black text-accent font-mono">{accuracy}%</h3>
+              </div>
+              <div className="p-4 bg-background rounded-lg border border-border inline-block min-w-[120px]">
+                <p className="text-xs text-muted font-mono">Elapsed Time</p>
+                <h3 className="text-xl font-black text-green-600 font-mono">{elapsedTime.toFixed(1)}s</h3>
+              </div>
             </div>
 
-            <form onSubmit={handleLeaderboardSubmit} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-[#8b949e] block">
-                  Enter Initials (3 letters)
-                </label>
-                <input
-                  type="text"
-                  maxLength={3}
-                  value={playerInitials}
-                  onChange={(e) => setPlayerInitials(e.target.value.toUpperCase())}
-                  placeholder="AAA"
-                  className="bg-[#0d1117] border border-[#30363d] rounded-lg px-4 py-2 text-center text-xl font-bold font-mono tracking-widest text-[#00e6ff] w-24 outline-none focus:border-[#00e6ff]"
-                />
-              </div>
-              <div className="flex gap-2 justify-center pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowWinModal(false)}
-                  className="bg-transparent text-[#8b949e] border border-[#30363d] hover:border-[#8b949e] px-4 py-2 rounded-lg text-xs font-bold font-mono"
-                >
-                  Close
-                </button>
-                <button
-                  type="submit"
-                  className="bg-[#3fb950] text-[#0d1117] px-6 py-2 rounded-lg text-xs font-bold font-mono hover:bg-[#3fb950]/90"
-                >
-                  Submit Score
-                </button>
-              </div>
-            </form>
+            <div className="flex gap-2 justify-center pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setUserGrid(
+                    Array.from({ length: ROWS_COUNT }, () =>
+                      Array.from({ length: COLS_COUNT }, () => ({ type: "empty", color: null }))
+                    )
+                  );
+                  setElapsedTime(0);
+                  setShowWinModal(false);
+                }}
+                className="bg-transparent text-muted border border-border hover:border-muted px-4 py-2 rounded-lg text-xs font-bold font-mono"
+              >
+                Reset Grid
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowWinModal(false)}
+                className="bg-accent text-white px-6 py-2 rounded-lg text-xs font-bold font-mono hover:bg-accent-hover"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
