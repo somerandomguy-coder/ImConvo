@@ -20,6 +20,9 @@ export default function GamePage() {
   const [state, dispatch] = useGame();
   useEffect(() => {
     dispatch({ type: "NEW_SENTENCE" });
+    const score = Number(localStorage.getItem("imconvo.game.score")) || 0;
+    const bestStreak = Number(localStorage.getItem("imconvo.game.bestStreak")) || 0;
+    dispatch({ type: "LOAD_SAVED_STATE", score, bestStreak });
   }, [dispatch]);
   const { videoRef, error, grabFrame, retry } = useWebcam();
   const { muted, toggleMuted, play } = useSound();

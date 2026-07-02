@@ -18,7 +18,8 @@ export type GameAction =
   | { type: "ROUND_PASS" }
   | { type: "ROUND_FAIL" }
   | { type: "NEW_SENTENCE"; sentence?: Sentence }
-  | { type: "SKIP_WORD" };
+  | { type: "SKIP_WORD" }
+  | { type: "LOAD_SAVED_STATE"; score: number; bestStreak: number };
 
 const BEST_KEY = "imconvo.game.bestStreak";
 const SCORE_KEY = "imconvo.game.score";
@@ -43,9 +44,9 @@ export function initGameState(sentence: Sentence = DEFAULT_SENTENCE): GameState 
     sentence,
     roundIndex: 0,
     status: "playing",
-    score: readNumber(SCORE_KEY),
+    score: 0,
     streak: 0,
-    bestStreak: readNumber(BEST_KEY),
+    bestStreak: 0,
     attempts: 0,
     lastResult: null,
   };
@@ -53,6 +54,12 @@ export function initGameState(sentence: Sentence = DEFAULT_SENTENCE): GameState 
 
 export function gameReducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
+    case "LOAD_SAVED_STATE":
+      return {
+        ...state,
+        score: action.score,
+        bestStreak: action.bestStreak,
+      };
     case "ROUND_PASS": {
       const score = state.score + 1;
       write(SCORE_KEY, score);
