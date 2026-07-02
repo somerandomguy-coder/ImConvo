@@ -15,24 +15,31 @@ echo "Region:     ${REGION}"
 echo "Bucket:     gs://${BUCKET_NAME}"
 echo "=============================================="
 
+# 0. Enable required Google Cloud APIs
+echo "🔌 0/5 Enabling required GCP APIs (Artifact Registry, Cloud Build, Cloud Run)..."
+gcloud services enable \
+  artifactregistry.googleapis.com \
+  cloudbuild.googleapis.com \
+  run.googleapis.com --quiet
+
 # 1. Create the Storage Bucket in Sydney (ignore error if it already exists)
 echo "📦 1/5 Checking storage bucket..."
-if ! gcloud storage buckets describe gs://${BUCKET_NAME} &>/dev/null; then
+if ! gcloud --quiet storage buckets describe gs://${BUCKET_NAME} &>/dev/null; then
     echo "Creating bucket gs://${BUCKET_NAME}..."
-    gcloud storage buckets create gs://${BUCKET_NAME} --location=${REGION}
+    gcloud --quiet storage buckets create gs://${BUCKET_NAME} --location=${REGION}
 else
     echo "Bucket gs://${BUCKET_NAME} already exists."
 fi
 
 # 2. Upload checkpoints structure
 echo "📤 2/5 Uploading checkpoints weights to bucket..."
-gcloud storage cp -r checkpoints/* gs://${BUCKET_NAME}/
+gcloud --quiet storage cp -r checkpoints/* gs://${BUCKET_NAME}/
 
 # 3. Create Artifact Registry Docker repository in Sydney (ignore error if exists)
 echo "📦 3/5 Checking Artifact Registry repository..."
-if ! gcloud artifacts repositories describe ${REPO_NAME} --location=${REGION} &>/dev/null; then
+if ! gcloud --quiet artifacts repositories describe ${REPO_NAME} --location=${REGION} &>/dev/null; then
     echo "Creating Artifact Registry repository '${REPO_NAME}'..."
-    gcloud artifacts repositories create ${REPO_NAME} \
+    gcloud --quiet artifacts repositories create ${REPO_NAME} \
       --repository-format=docker \
       --location=${REGION} \
       --description="Docker repository for ImConvo Backend"
@@ -42,11 +49,11 @@ fi
 
 # 4. Build and push image via Google Cloud Build
 echo "🏗️  4/5 Submitting build to Google Cloud Build..."
-gcloud builds submit --tag ${IMAGE_TAG} .
+gcloud --quiet builds submit --tag ${IMAGE_TAG} .
 
 # 5. Deploy to Cloud Run with GCS FUSE mount
 echo "🚀 5/5 Deploying backend service to Google Cloud Run (4GB RAM, GCS FUSE mount)..."
-gcloud run deploy ${SERVICE_NAME} \
+gcloud --quiet run deploy ${SERVICE_NAME} \
   --image=${IMAGE_TAG} \
   --region=${REGION} \
   --memory=4Gi \
