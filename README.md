@@ -1,187 +1,139 @@
 # ImConvo
-**Lip-reading AI developed by the Convobeo Team.**
+**Production-Grade Spatio-Temporal Lip-Reading System — Convobeo Team**
 
-ImConvo is a LipNet-based spatio-temporal model designed to interpret speech from visual lip movements. The project includes a full pipeline: preprocessing, training, evaluation, a FastAPI inference server, real-time inference, and a Next.js web UI.
+ImConvo is a deep learning-based spatio-temporal lip-reading application designed to interpret English speech from visual mouth movements. The system features a custom visual front-end (Flatten/GAP) paired with a deep temporal backbone (Conformer/BiGRU) trained on the GRID corpus. 
+
+This repository has been productionized and optimized for high-performance serverless deployment:
+- **Frontend:** Next.js (TailwindCSS v4, React 19) ready to deploy on **Vercel**.
+- **Backend:** FastAPI inference API ready to deploy on **Google Cloud Run** using a decoupled weights architecture with **Cloud Storage FUSE**.
 
 ---
 
-## Project Demo
+## 📺 Project Demo
 
 ![ImConvo Project Demonstration](demo.mp4)
 
 ---
 
-## Quick Start (Linux / macOS)
+## 🏗️ Production Architecture (Decoupled Weights)
+
+To keep the container footprint minimal and speed up deployment pipelines, model weights are decoupled from the Docker image. 
+
+```
+  ┌─────────────────────────────────────────────────────────┐
+  │                   GOOGLE CLOUD PLATFORM                 │
+  │                                                         │
+  │  ┌─────────────────────────┐                            │
+  │  │  Cloud Storage Bucket   │                            │
+  │  │ (imconvo-model-weights) │                            │
+  │  └────────────┬────────────┘                            │
+  │               │ Natively Mounts via FUSE                │
+  │               ▼ (Exposed as /code/checkpoints/)         │
+  │  ┌───────────────────────────────────────────────────┐  │
+  │  │ Cloud Run Serverless Instance                     │  │
+  │  │ - 4GB RAM Allocated (Prevents TensorFlow OOM)     │  │
+  │  │ - Pure Python App Code (Tiny Image Size)         │  │
+  │  └───────────────────────────────────────────────────┘  │
+  └─────────────────────────────────────────────────────────┘
+```
+
+1. **Storage Setup:** Weights are stored in a Google Cloud Storage bucket (e.g., `imconvo-model-weights`).
+2. **FUSE Volume Mount:** Cloud Run dynamically mounts the bucket onto `/code/checkpoints`. The FastAPI app reads `.keras` / `.h5` weights directly from the virtual folder as if it were a local disk, keeping the container image size under 1GB.
+
+---
+
+## 🚀 Quick Start (Local Run)
+
+You can launch both the backend API and Next.js frontend concurrently using a single shell command:
 
 ```bash
 chmod +x setup_and_run.sh
 ./setup_and_run.sh
 ```
 
-The script creates a virtual environment, installs dependencies, optionally downloads and preprocesses data, sets up the frontend, and presents a menu to launch any component — including **Start All** which boots the API server in the background and the frontend in the foreground together (Ctrl+C stops both).
+Select **Option 3 (Start All)** to boot:
+- The FastAPI API server on `http://127.0.0.1:8001`
+- The Next.js Web UI on `http://localhost:3000`
 
 ---
 
-## Project Structure
+## 📂 Project Structure
 
 ```
 ImConvo/
 ├── api/                    # FastAPI inference server (port 8001)
-│   ├── main.py             # Routes: /analyze, /analyze-word, /health, …
-│   ├── _models.py          # Model cache & loading helpers
-│   └── _utils.py           # Pure helpers (metrics, preview, encoding)
-├── checkpoints/            # Trained model weights (.keras / .h5)
-├── data/                   # Raw GRID dataset + preprocessed .npy files
-├── experiments/
-│   ├── word_level_grid/    # Slot-based sentence classifier (word-level)
-│   └── isolated_word_level/# Isolated word classifier & backbone pre-training
+│   ├── main.py             # HTTP Routes & Websocket Game server
+│   ├── _game.py            # Word game backend evaluation logic
+│   ├── _models.py          # Model lazy-loading cache helpers
+│   └── _utils.py           # Preprocessing & encoding helpers
+├── checkpoints/            # Model weight directories (FUSE mounted in production)
+│   ├── best_ctc_model_conformer_lite_gap_proj.keras   # CTC Sentence Model
+│   ├── word_level_grid/    # Grid Word Classifier Model
+│   └── isolated_word_level/# Word Game Classifier Model
+├── data/
+│   └── s3_processed/       # Example videos & alignments for backend demo
 ├── frontend/               # Next.js web application (port 3000)
-├── notebooks/              # Exploratory analysis notebooks
-├── reports/
-│   ├── decoder_artifacts/  # N-gram LM artifacts (grid_word_trigram.json)
-│   ├── eval_result/        # CTC eval logs (WER/CER)
-│   └── plots/              # Loss curves and performance summaries
-├── scripts/                # Data & utility scripts (see below)
-├── splits/grid_v1/         # Train/val/test split manifests
-├── src/                    # Core library
-│   ├── dataset.py          # Data pipeline
-│   ├── decoding.py         # Greedy, beam, and n-gram decoders
+├── src/                    # Core lip-reading python package
+│   ├── isolated_word/      # Isolated word model definitions (Game backbone)
+│   ├── word_level/         # Word-level slot model definitions (Word API)
+│   ├── model.py            # Sentence CTC model & frontends (Flatten, GAP)
+│   ├── decoding.py         # CTC decoding (Greedy, Beam, N-gram Beam)
 │   ├── llm_postprocessor.py# Gemini LLM post-correction
-│   ├── model.py            # CTC model + all backbone variants
-│   ├── utils.py            # Constants, preprocessing, alignment parsing
-│   └── visualization.py
-├── train.py                # CTC training loop
-├── test.py                 # CTC evaluation
-└── transplant.py           # Transfer backbone weights from isolated model
+│   └── utils.py            # Lip cropping, bbox extraction, preprocessing helpers
+├── archive/                # Archived training loops, data prep scripts, & eval logs
+├── Dockerfile              # Lean backend Dockerfile for Cloud Run
+└── setup_and_run.sh        # Developer bootstrap script
 ```
 
 ---
 
-## Model Variants
+## 🔌 API Endpoints
 
-The CTC model supports interchangeable temporal backbones and visual front-ends.
-
-| Backbone | Flag |
-| :--- | :--- |
-| BiGRU (default) | `bigru` |
-| GRU | `gru` |
-| BiLSTM | `bilstm` |
-| Transformer (small) | `transformer` |
-| Transformer (medium) | `transformer_medium` |
-| TCN | `tcn` |
-| Conformer Lite | `conformer_lite` |
-
-| Visual front-end | Flag |
-| :--- | :--- |
-| Flatten (default) | `flatten` |
-| GAP + Projection | `gap_proj` |
-| ResNet-18 | `resnet18` |
-
-Checkpoint filenames encode the variant (e.g. `best_ctc_model_conformer_lite.keras`). The inference scripts infer the variant automatically from the filename.
-
----
-
-## Usage
-
-### API Server (primary interface)
-
-```bash
-python -m api.main                    # default: http://0.0.0.0:8001
-python -m api.main --port 8002        # custom port
-```
-
-Key endpoints:
+The backend server exposes the following routes for video analysis and status checks:
 
 | Method | Path | Description |
 | :--- | :--- | :--- |
-| `GET` | `/health` | Status, loaded model, TF version |
-| `GET` | `/checkpoints` | List available checkpoints |
-| `GET` | `/decoders` | List decoder modes |
+| `GET` | `/health` | Status, loaded models, and TF version |
+| `GET` | `/checkpoints` | List active weight checkpoints |
+| `GET` | `/decoders` | List supported CTC decoder modes |
 | `GET` | `/examples` | List example videos |
 | `POST` | `/analyze` | CTC inference on uploaded video |
 | `POST` | `/analyze-example` | CTC inference on a server-side example |
 | `POST` | `/analyze-word` | Word-level slot inference on uploaded video |
 | `POST` | `/analyze-word-example` | Word-level inference on a server-side example |
+| `WS` | `/ws/game` | WebSocket endpoint driving the interactive sandbox game |
 
 ### Decoder Modes
-
 Pass `decoder_mode` to `/analyze`:
-
-| Mode | Description |
-| :--- | :--- |
-| `greedy_ctc` (default) | Fast argmax CTC decoding |
-| `beam_ctc` | Multi-hypothesis CTC beam search |
-| `beam_ngram_grid` | Beam search reranked with GRID trigram LM |
+- `greedy_ctc` (default) — Fast argmax CTC decoding.
+- `beam_ctc` — Multi-hypothesis CTC beam search.
+- `beam_ngram_grid` — Beam search reranked with GRID trigram language model.
 
 ### LLM Post-processing
-
-Set `GEMINI_API_KEY` in a `.env` file at the project root, then pass `llm_postprocess=true` (API) or `--llm-postprocess` (inference.py).
-
-```
-# .env
-GEMINI_API_KEY=your_key_here
-```
-
-### Training & Evaluation
-
-```bash
-python train.py                        # CTC training
-python train.py --model-variant conformer_lite
-
-python test.py                         # CTC evaluation → reports/eval_result/
-python test.py --model-variant conformer_lite --checkpoint-path checkpoints/best_ctc_model_conformer_lite.keras
-
-# Word-level experiment
-python experiments/word_level_grid/train_word.py
-python experiments/word_level_grid/test_word.py
-
-# Isolated word experiment
-python experiments/isolated_word_level/train_isolated.py
-python experiments/isolated_word_level/test_isolated.py
-```
-
-### Data Scripts
-
-| Script | Description |
-| :--- | :--- |
-| `scripts/download_dataset.py` | Download GRID corpus |
-| `scripts/preprocess.py` | Convert `.mpg` → `.npy` (single-core) |
-| `scripts/preprocess_multi_cores.py` | Convert `.mpg` → `.npy` (multi-core) |
-| `scripts/build_split_manifests.py` | Generate train/val/test split files |
-| `scripts/build_grid_ngram_lm.py` | Build GRID trigram LM for beam decoder |
-| `scripts/check_data.py` | Validate preprocessed data integrity |
-
-### Backbone Transplant
-
-To initialize a CTC model with weights pre-trained on the isolated word task:
-
-```bash
-python transplant.py
+Export your key in a `.env` file at the project root to enable Gemini-based error correction:
+```env
+GEMINI_API_KEY=your_gemini_api_key
 ```
 
 ---
 
-## Frontend (Web UI)
+## 🌐 Frontend (Next.js)
 
-The `frontend/` directory is a Next.js application that calls the API server.
+The `frontend/` directory houses the web UI client built with React 19, TailwindCSS v4, and Next.js 16.2.
 
-### Prerequisites
-- Node.js v18+
-- pnpm
-
-### Setup & Run
-
+### Local Development
 ```bash
 cd frontend
 pnpm install
-pnpm dev    # http://localhost:3000
+pnpm dev
 ```
 
-The frontend expects the API server to be running on port 8001.
+### Vercel Deployment
+To deploy the frontend to Vercel, set the **Root Directory** to `frontend` and configure:
+- `NEXT_PUBLIC_API_URL`: Your deployed FastAPI backend URL.
+- `NEXT_PUBLIC_DEMO_API_URL`: Your deployed FastAPI backend URL.
 
-| Command | Description |
-| :--- | :--- |
-| `pnpm dev` | Development server with hot reload |
-| `pnpm build` | Production build |
-| `pnpm start` | Start production server |
+---
 
+## 🗄️ Historical Experiments Archive
+All experimental scripts, splits, training routines, and performance reports are archived under `archive/` to keep the codebase clean and dedicated to the production application.
