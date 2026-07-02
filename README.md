@@ -10,8 +10,7 @@ This repository has been productionized and optimized for high-performance serve
 ---
 
 ## 📺 Project Demo
-
-![ImConvo Project Demonstration](demo.mp4)
+<video src="demo.mp4" width="100%" controls muted></video>
 
 ---
 
