@@ -5,6 +5,12 @@ ImConvo is a LipNet-based spatio-temporal model designed to interpret speech fro
 
 ---
 
+## Project Demo
+
+![ImConvo Project Demonstration](demo.mp4)
+
+---
+
 ## Quick Start (Linux / macOS)
 
 ```bash
