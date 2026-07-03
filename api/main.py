@@ -81,11 +81,9 @@ from api._models import (
 )
 
 EXAMPLE_DIR = ROOT_DIR / "data" / "s3_processed"
-LOCAL_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:3100",
-    "http://127.0.0.1:3100",
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("IMCONVO_ALLOWED_ORIGINS", "*").split(",")
 ]
 
 
@@ -101,8 +99,8 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="ImConvo Inference API", version="1.0.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=LOCAL_ORIGINS,
-    allow_credentials=True,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
